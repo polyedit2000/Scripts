@@ -1,0 +1,28 @@
+class Game_Actor < Game_Battler
+ def init_skills
+    
+    levelOneFullSet = true
+    #If true, learn all level one skills. If false, start randomly with one skill.
+  
+    @skills = []
+    i = 1
+    if levelOneFullSet
+      bob = self.class.learnings.select{|learning| learning.level == 1}
+      bob.compact.each do |learning|
+        learn_skill(learning.skill_id)
+      end
+      i = 2
+    end
+    while i <= @level
+      bob = self.class.learnings.select{|learning| learning.level == i}
+      learn_skill(bob.compact.sample.skill_id) unless bob.empty?
+      i += 1
+    end
+  end
+  
+  def level_up
+    @level += 1
+    bob = self.class.learnings.select {|learning| learning.level == @level}
+    learn_skill(bob.compact.sample.skill_id)unless bob.empty?
+  end
+end

@@ -1,0 +1,131 @@
+#--------------------------------#
+# Dramatic Lightning Co Presents:
+# Class Armor
+#--------------------------------#
+# Feel like dressing up?  This script allows you to change classes when you
+# equip certain armors.  You could recreate Final Fantasy 14's Job System
+# or fake a sub class here.  You can still change your default class and
+# learn skills not related to a class.
+# Place a <DLArmorClass x> tag in your weapon/armor notebox,
+# x being the class id you want to change into.
+#--------------------------------#
+
+module DL
+  module ARMORCLASS
+
+    SLOTID = 3 #0-4 refers to equipment slot, 3 being Body Armor, 0 being Weapon.
+    EXPKEEP = false #true keeps level on armor change, while false has individual class levels
+    SKILLRESET = false #skills reset on equip.
+    DEFSKILLLEARN = true #learn default class skills regardless of armor
+    
+  end
+end
+
+#--------------------------------#
+#Technical stuff below
+#--------------------------------#
+
+class RPG::BaseItem
+  
+  def armor_class
+    aclass = 0
+    regex = /<DLArmorClass\s*(\d+)\s*>/i
+    res = self.note.match(regex)
+    if res
+      aclass = res[1].to_i
+    end
+    return aclass
+  end
+
+end
+
+class Game_Actor < Game_Battler  
+  
+  alias dl_init_equips init_equips
+  def init_equips(equips)
+    dl_init_equips(equips)
+    @default_class_id = @class_id
+    @skills2 = []
+    update_armor
+    refresh
+  end
+
+  alias dl_change_equip change_equip
+  def change_equip(slot_id, item)
+    dl_change_equip(slot_id, item)
+    update_armor
+    refresh
+  end
+
+  def update_armor 
+    if @equips[DL::ARMORCLASS::SLOTID].object and $data_armors[@equips[DL::ARMORCLASS::SLOTID].object.id].armor_class > 0
+      change_class($data_armors[@equips[DL::ARMORCLASS::SLOTID].object.id].armor_class, DL::ARMORCLASS::EXPKEEP)
+    else
+      change_class(@default_class_id, DL::ARMORCLASS::EXPKEEP)
+    end
+     update_skills
+  end
+  
+  def change_default_class(new_class_id)
+    @default_class_id = new_class_id if new_class_id > 0
+  end
+  
+  def update_skills
+    init_skills if DL::ARMORCLASS::SKILLRESET
+    if DL::ARMORCLASS::DEFSKILLLEARN and @class_id != @default_class_id
+      change_class(@default_class_id, DL::ARMORCLASS::EXPKEEP)
+      self.class.learnings.each do |learning|
+        learn_skill(learning.skill_id) if learning.level <= @level
+      end
+      if @equips[DL::ARMORCLASS::SLOTID].object and $data_armors[@equips[DL::ARMORCLASS::SLOTID].object.id].armor_class > 0
+        change_class($data_armors[@equips[DL::ARMORCLASS::SLOTID].object.id].armor_class, DL::ARMORCLASS::EXPKEEP)
+      end
+    end
+    @skills2.each do |skill_id|
+      @skills.push(skill_id)
+    end
+  end
+  
+  alias dl_level_up level_up
+  def level_up
+    dl_level_up
+    if DL::ARMORCLASS::DEFSKILLLEARN and @class_id != @default_class_id and DL::ARMORCLASS::EXPKEEP
+      $data_classes[@default_class_id].learnings.each do |learning|
+        learn_skill(learning.skill_id) if learning.level == @level
+      end
+    end
+  end
+  
+  def learn_skill2(skill_id)
+    unless skill_learn?($data_skills[skill_id])
+      @skills2.push(skill_id)
+      @skills.push(skill_id)
+      @skills.sort!
+    end
+  end
+  
+  alias dl_forget_skill forget_skill
+  def forget_skill(skill_id)
+    dl_forget_skill(skill_id)
+    @skills2.delete(skill_id)
+  end
+   
+end
+
+class Game_Interpreter #overwrite
+  def command_321
+    actor = $game_actors[@params[0]]
+    actor.change_default_class(@params[1]) if actor && $data_classes[@params[1]]
+    actor.update_armor
+  end
+  
+  def command_318
+    iterate_actor_var(@params[0], @params[1]) do |actor|
+      if @params[2] == 0
+        actor.learn_skill2(@params[3])
+      else
+        actor.forget_skill(@params[3])
+      end
+    end
+  end
+end

@@ -1,0 +1,662 @@
+module DL
+  module PARTYSTEAL
+    SELFSWITCH = "D"
+    PARTYCAPTURE = false
+    PLAYERSKIP = false
+  end
+end
+
+=begin
+#===============================================================================
+ Title: Party Stealer
+ Author: Dramatic Lightning Co
+ Date: Feb 21, 2020
+--------------------------------------------------------------------------------
+ Changelog:
+ -Mar 7, 2020 - State escape and evolution added.
+ -Feb 21, 2020 - Player capture added.
+--------------------------------------------------------------------------------
+
+ This script can make your map events "hold" your party.  By default, using
+ party_steal would capture the player (to be replaced by the next-in-line),
+ removed from the party until you get them back.  Their data stays with the
+ event even when moving to another map.
+ 
+--------------------------------------------------------------------------------
+ 
+ The modules on top:
+ SELFSWITCH- This self-switch will be turned on/off on capture/release
+ PARTYCAPTURE- Party will be captured as a whole rather than one-by-one.
+ PLAYERSKIP- Player is not captured.
+ 
+ *Activating PARTYCAPTURE and PLAYERSKIP negates the script...
+ 
+--------------------------------------------------------------------------------
+ 
+ Notetags:
+ <ActorReplace> - In Event Comment for current page, comment shows actor's
+ sprite instead.
+ <StealReplace: state_id> - On State, replace the display state with the new
+ id when Steps run out.
+
+--------------------------------------------------------------------------------
+
+ Script Call (from Event):
+  party_steal(state_id = 0, actor_id = 0) 
+    Takes player into event when actor_id is 0.  Can set a display state.
+    Can set actor_id to capture specific actor only or to -1 or -2 to capture
+    first or last follower first.
+  party_steal_setup(map_id, event_id, actor_id, state_id = 0) 
+    Prepare an event even if its in another map.
+  party_return(state_id = 0)
+    Returns the captured party member and removes display state.  Setting the
+    state_id adds a state after their release.
+  party_alter(state_id)
+    Changes the display state on the captured party member.  0 is valid too.
+  party_relocate(actor_id, state_id = -1)
+    This event becomes the new holder of a captive party member.  -1 retains
+    the previous display state and 0 erases the state.
+  holds_member?(actor_id)
+    Check if the event holds the actor with that id
+  holds_player?
+    Check if the event is holding the player (aka last man).
+  holds_member_state?(state_id)
+    Checks if the event's actor currently has that state.
+  held_member
+    Access the attributes of currently held member (nil if no member held)
+  lost_members?(all_map = [])
+    Check if there are captured members on integer/arrayed maps.  If left empty,
+    will check if any members are captured.  -1 is current map.
+  retrieve_lost_members(all_map = [])
+    Add captured members back based on integer/arrayed maps.  If left empty,
+    will return all captured members.  -1 is current map.
+    
+--------------------------------------------------------------------------------
+    
+  Display State:
+  The Display State, set by party_steal, can be shown using a sprite-replacement
+  script.  The state also affects "escape", when you press the arrows:
+  -The number of Turns is the minimum number of times you need to press buttons.
+  -The Damage chance is the chance of escaping to 
+  -The number of Steps, if state is marked with <StealReplace:x>, is the
+   "time" you have before the state morphs.  Higher LUK means more time.
+  -If these are not marked, these count as 0 minimum, 100% escape, and no morph.
+  
+  Extra:
+  -If you use a script for events to touch followers, the default party_steal
+  can capture followers directly.
+  -
+  
+#===============================================================================
+=end
+
+module RPG
+  
+  class Event::Page
+    def actor_replace
+      @list.each {|cmd|
+        if cmd.code == 108 && res = cmd.parameters[0].match(/<ActorReplace>/i)
+          return true
+        end
+      }
+      return false
+    end
+    def actor_teleport
+      @list.each {|cmd|
+        if cmd.code == 108 && res = cmd.parameters[0].match(/<ActorTeleport:\s*(\d+)\s*(\d+)\s*(\d+)\s*>/i)
+         return [res[1].to_i, res[2].to_i, res[3].to_i, ]
+        end
+      }
+      return [-1]
+    end
+    def leave_morph
+      @list.each {|cmd|
+        if cmd.code == 108 && res = cmd.parameters[0].match(/<ActorLeave:\s*(\d+)\s*>/i)
+         return res[1].to_i
+        end
+      }
+      return -1
+    end
+    def move_morph
+      @list.each {|cmd|
+        if cmd.code == 108 && res = cmd.parameters[0].match(/<ActorMove:\s*(\d+)\s*(\d+)\s*(\d+)\s*>/i)
+         return [res[1].to_i, res[2].to_i, res[3].to_i]
+        end
+      }
+      return [-1]
+    end
+    
+    def actor_release
+      @list.each {|cmd|
+        if cmd.code == 108 && res = cmd.parameters[0].match(/<ActorRelease:\s*(\d+)\s*>/i)
+         return res[1].to_i
+        end
+      }
+      return -1
+    end
+  end
+  class BaseItem
+    def state_steal_morph
+      res =  self.note.match(/<StealReplace:\s*(\d+)\s*>/i)
+      return (res ? res[1].to_i : -1)
+    end
+  end
+end
+
+class Game_Interpreter
+  def party_steal_setup(map_id,event_id,player_id,state_id = 0)
+    $game_party.party_steal_setup(map_id,event_id,player_id,state_id)
+  end
+  def party_steal(playerstate = 0,playerid = 0)
+    $game_map.events[@event_id].party_steal(playerstate, playerid)
+  end
+  def party_return(playerstate = 0)
+    $game_map.events[@event_id].party_return(playerstate)
+  end
+  def party_relocate(playerid, replace_state = -1)
+    $game_map.events[@event_id].party_relocate(playerid, replace_state)
+  end
+  def holds_member?(actorid)
+    return $game_map.events[@event_id].holds_member?(actorid)
+  end
+  def holds_player?
+    return $game_map.events[@event_id].holds_player?
+  end
+  def held_member
+    return $game_map.events[@event_id].held_member
+  end
+  def holds_member_state?(state_id)
+    return $game_map.events[@event_id].holds_member_state?(state_id)
+  end
+  def party_alter(state_id)
+    return $game_map.events[@event_id].party_alter(state_id)
+  end
+  def lost_members?(all_map = [])
+    $game_party.lost_members?(all_map)
+  end
+  def retrieve_lost_members(all_map = [])
+    $game_party.retrieve_lost_members(all_map)
+  end
+end
+
+class Game_Party < Game_Unit
+  attr_accessor :owned
+  alias :dl_party_steal_initialize :initialize
+  def initialize
+    @owned = []
+    dl_party_steal_initialize
+  end
+  
+  alias :dl_party_steal_add_actor :add_actor
+  def add_actor(actor_id)
+    dl_party_steal_add_actor(actor_id)
+    @owned.each_index do |i|
+      a = $game_party.owned[i]
+      next if a == nil
+      if a[2] == actor_id
+        $game_self_switches[[a[0], a[1],DL::PARTYSTEAL::SELFSWITCH]] = false
+        $game_map.events[a[1]].refresh if $game_map.map_id == a[0]
+        $game_actors[a[2]].remove_state(a[3]) if a[3] > 0
+        $game_party.owned[i] = nil
+        $game_actors[a[2]].result.removed_states = []
+      end
+    end
+  end
+  
+  def party_steal_setup(map_id, event_id, player_id, state_id = 0)
+    if $game_party.members.size > 1 and player_id < 0
+      player_id = $game_player.followers[0].actor.id if player_id == -1
+      player_id = $game_party.members.last.id if player_id == -2
+    else
+      player_id = 0
+    end
+    player_id = $game_player.actor.id if player_id == 0
+    if @owned.none? {|a| a[0] == map_id and a[1] == event_id}
+      @owned << [map_id, event_id, player_id, state_id]
+      $game_actors[player_id].add_state(state_id) if state_id > 0
+      remove_actor(player_id) 
+      $game_self_switches[[map_id, event_id, DL::PARTYSTEAL::SELFSWITCH]] = true 
+    end
+    @owned = @owned.compact
+
+  end
+  
+  
+  def lost_members?(all_map = [])
+    all_map = [$game_map.map_id] if all_map.is_a? Integer and all_map == -1
+    all_map = [all_map] if all_map.is_a? Integer
+    if all_map.size == 0
+      return @owned.size > 0
+    else
+      return @owned.any? {|a| all_map.include?(a[0])}
+    end
+  end
+  
+  def retrieve_lost_members(all_map = [])
+    all_map = [$game_map.map_id] if all_map.is_a? Integer and all_map == -1
+    all_map = [all_map] if all_map.is_a? Integer
+    $game_party.owned.each_index do |i|
+      a = $game_party.owned[i]
+      next if a == nil
+      $game_party.add_actor(a[2]) if all_map.size == 0 or all_map.include?(a[0])
+    end
+    
+    $game_party.owned = $game_party.owned.compact
+   end
+   
+  def on_battle_end
+    super
+    return unless $game_player.captured[1] > 0
+    if !$game_player.actor.state?($game_player.captured[1])
+       $game_party.members.each do |m|
+         m.remove_state($game_player.captured[1])
+       end
+       $game_self_switches[[$game_map.map_id,$game_player.captured[0],DL::PARTYSTEAL::SELFSWITCH]] = false
+       $game_player.captured = [0,0]
+    end
+    
+  end
+  
+end
+
+class Game_Event < Game_Character
+  
+  def held_member
+    $game_party.owned.each_index do |i|
+      a = $game_party.owned[i]
+      next if a == nil
+      return $game_actors[a[2]] if a[0] == @map_id and a[1] == @id
+    end
+    return $game_player.actor
+    return nil
+  end
+  
+  def holds_member_state?(state_id)
+    $game_party.owned.each_index do |i|
+      a = $game_party.owned[i]
+      next if a == nil
+      return true if a[0] == @map_id and a[1] == @id and a[3] == state_id
+    end
+    return true if $game_player.captured[0] == @id and $game_player.captured[1] == state_id
+    return false
+  end
+  
+  def party_alter(state_id)
+    return unless state_id >= 0
+    $game_party.owned.each_index do |i|
+      a = $game_party.owned[i]
+      next if a == nil
+      if a[0] == @map_id and a[1] == @id
+        $game_actors[a[2]].add_state(state_id) if state_id > 0
+        $game_actors[a[2]].remove_state(a[3]) if a[3] > 0
+        $game_party.owned[i][3] = state_id
+      end
+    end
+    if $game_player.captured[0] == @id
+      $game_party.members.each do |m|
+        $game_player.actor.add_state(state_id) if state_id > 0
+        $game_player.actor.remove_state($game_player.captured[1]) if $game_player.captured[1] > 0
+      end
+      $game_player.captured[1] = state_id
+    end
+
+  end
+
+  def holds_member?(actor_id)
+    $game_party.owned.each_index do |i|
+      a = $game_party.owned[i]
+      next if a == nil
+      return true if a[0] == @map_id and a[1] == @id and a[2] == actor_id
+      return true if a[0] == @map_id and a[1] == @id and actor_id == 0
+    end
+    return true if $game_player.captured[0] == @id and $game_player.actor.id == actor_id
+    return false
+  end
+
+  def holds_player?
+    return true if $game_player.captured[0] == @id
+    return false
+  end
+
+  def party_relocate(playerid, playerstate = -1)
+    $game_party.owned.each_index do |i|
+      a = $game_party.owned[i]
+      next if a == nil
+      if a[2] == playerid
+        $game_self_switches[[a[0], a[1],DL::PARTYSTEAL::SELFSWITCH]] = false
+        $game_actors[a[2]].remove_state(a[3]) if playerstate >= 0 and playerstate != a[3] and a[3] > 0
+        if playerstate > 0 and playerstate != a[3]
+          $game_actors[a[2]].add_state(playerstate)
+          $game_party.owned[i][3] = playerstate
+        end
+        $game_party.owned[i] = [@map_id, @id, playerid, a[3]]
+        $game_self_switches[[@map_id, @id,DL::PARTYSTEAL::SELFSWITCH]] = true
+      end
+    end
+    $game_party.owned = $game_party.owned.compact
+  end
+  
+  def party_return(playerstate = 0)
+    $game_party.owned.each_index do |i|
+      a = $game_party.owned[i]
+      next if a == nil
+      if a[0] == @map_id and a[1] == @id
+        $game_player.followers.reverse_each do |f|
+          break if f.visible?
+          f.moveto(@x,@y)
+        end
+        $game_actors[a[2]].add_state(playerstate) if playerstate > 0
+        $game_party.add_actor(a[2])
+      end
+    end
+    $game_party.owned = $game_party.owned.compact
+    if $game_player.captured[0] == @id
+       $game_party.members.each do |m|
+         m.remove_state($game_player.captured[1]) if  $game_player.captured[1] > 0
+         m.result.removed_states = []
+         m.add_state(playerstate) if playerstate > 0
+       end
+       $game_player.captured = [0,0]
+       $game_player.moveto(@x,@y)
+       $game_self_switches[[@map_id, @id,DL::PARTYSTEAL::SELFSWITCH]] = false
+       $game_player.refresh
+    end
+
+  end
+  
+  def character_name
+    if @page and @page.actor_replace
+      return $game_player.actor.character_name if $game_player.captured[0] == @id
+      $game_party.owned.each_index do |i|
+        a = $game_party.owned[i]
+        next if a == nil
+        if a[0] == @map_id and a[1] == @id
+          return $game_actors[a[2]].character_name
+        end
+      end
+    end
+    @character_name
+  end
+  
+  def character_index
+    if @page and @page.actor_replace
+      return $game_player.actor.character_index if $game_player.captured[0] == @id
+      $game_party.owned.each_index do |i|
+        a = $game_party.owned[i]
+        next if a == nil
+        if a[0] == @map_id and a[1] == @id
+          return $game_actors[a[2]].character_index
+        end
+      end
+    end
+    @character_index
+  end
+
+  def party_steal(playerstate = 0, playerid = 0)
+    if DL::PARTYSTEAL::PARTYCAPTURE == false and ($game_party.members.size > 1 and $game_party.owned.compact.none? {|a| a[0] == @map_id and a[1] == @id}) 
+      return unless $game_party.members.size > 1
+      return if playerid < -2
+      return if $game_party.owned.compact.any? {|a| a[0] == @map_id and a[1] == @id}
+      if playerid == 0
+        if in_front($game_player.x, $game_player.y)
+          $game_party.owned << [@map_id, @id, $game_player.actor.id, playerstate]
+          $game_player.actor.add_state(playerstate) if playerstate > 0
+          $game_party.remove_actor($game_player.actor.id)
+          $game_self_switches[[@map_id, @id,DL::PARTYSTEAL::SELFSWITCH]] = true
+          return
+        end
+        if $data_system.opt_followers
+          $game_player.followers.each do |follower|
+            if in_front(follower.x, follower.y)
+              $game_party.owned << [@map_id, @id,follower.actor.id, playerstate]
+              follower.actor.add_state(playerstate) if playerstate > 0
+              $game_party.remove_actor(follower.actor.id)
+              $game_self_switches[[@map_id, @id,DL::PARTYSTEAL::SELFSWITCH]] = true 
+              break
+            end
+          end
+        end
+      elsif playerid < 0
+        follower = $game_player.followers[0]
+        follower = $game_party.members.last if playerid == -2
+        if in_front($game_player.x, $game_player.y)
+          $game_party.owned << [@map_id, @id,follower.actor.id, playerstate]
+          follower.actor.add_state(playerstate) if playerstate > 0
+          $game_party.remove_actor(follower.actor.id)
+          $game_self_switches[[@map_id, @id,DL::PARTYSTEAL::SELFSWITCH]] = true 
+        end
+      else
+        if $game_party.owned.none? {|a| a[0] == @map_id and a[1] == @id}
+          $game_party.owned << [@map_id, @id, playerid, playerstate]
+          $game_actors[playerid].add_state(playerstate) if playerstate > 0
+          $game_party.remove_actor(playerid) 
+          $game_self_switches[[@map_id, @id,DL::PARTYSTEAL::SELFSWITCH]] = true 
+        end
+      end
+      $game_party.owned = $game_party.owned.compact
+    elsif DL::PARTYSTEAL::PLAYERSKIP == false
+       $game_party.members.each do |m|
+         m.result.removed_states = []
+         m.add_state(playerstate) if playerstate > 0
+       end
+       $game_player.captured = [@id, playerstate]
+       $game_self_switches[[@map_id, @id,DL::PARTYSTEAL::SELFSWITCH]] = true
+       $game_player.refresh
+    end
+
+  end
+    
+  def in_front(thisx, thisy)
+    bob = distance_x_from(thisx).abs + distance_y_from(thisy).abs <= 1 #Diamont Direction 531
+    return true if bob == 0
+    bob = false if @direction == 2 and distance_y_from(thisy) > 0
+    bob = false if @direction == 4 and distance_x_from(thisx) < 0
+    bob = false if @direction == 6 and distance_x_from(thisx) > 0
+    bob = false if @direction == 8 and distance_y_from(thisy) < 0
+    return bob
+  end  
+  
+
+  alias :dl_state_steal_update :update
+  def update
+    if @page and @page.actor_release >= 0 and holds_member_state?(@page.actor_release) and holds_player?
+      start
+      refresh
+    elsif @page and @page.actor_release >= 0 and holds_member_state?(@page.actor_release) and $game_player.captured[0] == 0
+      start
+      refresh
+    else
+      maxstep = 10000
+      @steal_step = maxstep if @steal_step == nil
+      if $game_player.captured[0] == @id
+        @steal_step -= [rand(1000) - $game_player.actor.luk,1].max
+        if @steal_step <= 0
+          @steal_step = maxstep
+          $game_party.members.each do |m|
+            bob = m.state_steal_morph($game_player.captured[1],self)
+          end
+        end
+      elsif $game_party.owned.size > 0
+        $game_party.owned.each_index do |i|
+          a = $game_party.owned[i]
+          next if a == nil
+          if a[0] == @map_id and a[1] == @id
+            @steal_step -= [rand(1000) - $game_actors[a[2]].luk, 1].max
+            if @steal_step <= 0
+              @steal_step = maxstep
+              bob = $game_actors[a[2]].state_steal_morph(a[3], self, i)
+            end
+          end
+        end
+      else
+        @steal_step = maxstep
+      end
+      if @page and @page.actor_teleport[0] > 0 and holds_member_state?(@page.actor_teleport[2])
+        if $game_party.owned.none? {|z| @page.actor_teleport[0] == z[0] and @page.actor_teleport[1] == z[1]}
+          actor_teleport = @page.actor_teleport
+          $game_party.owned.each_index do |i|
+            a = $game_party.owned[i]
+            if a[0] == @map_id and a[1] == @id
+              $game_actors[held_member.id].remove_state(a[3]) if a[3] > 0
+              $game_actors[held_member.id].result.removed_states = []
+              $game_actors[held_member.id].add_state(actor_teleport[3]) if actor_teleport[3] > 0
+              $game_party.owned[i] = [actor_teleport[0], actor_teleport[1], held_member.id, actor_teleport[3]]
+              $game_self_switches[[@map_id, @id, DL::PARTYSTEAL::SELFSWITCH]] = false 
+              $game_self_switches[[@map_id, @id, actor_teleport[4]]] = true if ["A","B","C","D"].include?(actor_teleport[4])
+              $game_self_switches[[actor_teleport[0], actor_teleport[1], DL::PARTYSTEAL::SELFSWITCH]] = true 
+            end
+          end
+          if $game_player.captured[0] == @id
+            $game_player.actor.remove_state($game_player.captured[1]) if $game_player.captured[1] > 0
+            $game_player.actor.result.removed_states = []
+            $game_player.actor.add_state(actor_teleport[3]) if actor_teleport[3] > 0
+            $game_player.captured = [actor_teleport[1], actor_teleport[3]]
+            $game_self_switches[[@map_id, @id, DL::PARTYSTEAL::SELFSWITCH]] = false 
+            $game_self_switches[[@map_id, @id, actor_teleport[4]]] = true if ["A","B","C","D"].include?(actor_teleport[4])
+            $game_self_switches[[actor_teleport[0], actor_teleport[1], DL::PARTYSTEAL::SELFSWITCH]] = true
+            if @map_id != actor_teleport[0]
+              $game_player.reserve_transfer(actor_teleport[0], 0 , 0, @direction)
+              $game_temp.fade_type = 0
+            end
+          end
+        end
+      end
+    end
+    $game_player.center(@real_x,@real_y) if $game_player.captured[0] == @id and !$game_map.interpreter.running?
+    dl_state_steal_update
+  end
+  
+  def randstep
+    @pattern = (rand(2) == 0 ? 0 : 2)
+  end
+  def actor_move_leave(a)
+    if @page and @page.move_morph[0] >= 0
+      b = @page.move_morph
+      $game_actors[a[2]].remove_state(a[3]) if a[3] > 0
+      $game_actors[a[2]].result.removed_states = []
+      $game_actors[a[2]].add_state(b[2]) if b[2] > 0
+      $game_self_switches[[a[0], a[1],DL::PARTYSTEAL::SELFSWITCH]] = false
+      if b[0] == 0
+        $game_party.add_actor(a[2])
+        a = nil
+      else
+        a = [b[0],b[1],a[2],b[2]]
+        $game_self_switches[[b[0], b[1],DL::PARTYSTEAL::SELFSWITCH]] = true
+      end
+    elsif @page and @page.leave_morph >= 0
+      $game_actors[a[2]].remove_state(a[3]) if a[3] > 0
+      $game_actors[a[2]].result.removed_states = []
+      $game_actors[a[2]].add_state(@page.leave_morph) if @page.leave_morph > 0
+      a[3] = @page.leave_morph
+    end
+    return a
+  end
+
+end
+
+class Game_Player < Game_Character
+  
+  alias :dl_party_steal_perform_transfer :perform_transfer
+  def perform_transfer
+    if transfer? and @new_map_id != $game_map.map_id
+      $game_party.owned.each_index do |i|
+        a = $game_party.owned[i]
+        next if a == nil
+        if a[0] == $game_map.map_id
+          $game_party.owned[i] = $game_map.events[a[1]].actor_move_leave(a)
+        end
+      end
+      $game_party.owned = $game_party.owned.compact
+    end
+    dl_party_steal_perform_transfer
+  end
+  
+  
+  attr_accessor :captured
+  alias :dl_party_steal_initialize :initialize
+  def initialize
+    @captured = [0,0]
+    dl_party_steal_initialize
+  end
+  
+  alias :dl_leader_steal_update_nonmoving :update_nonmoving
+  def update_nonmoving(last_moving)
+    return if @captured[0] > 0
+    dl_leader_steal_update_nonmoving(last_moving)
+  end
+  
+  alias :dl_leader_steal_refresh :refresh
+  def refresh
+    dl_leader_steal_refresh
+    if @captured[0] > 0
+      @opacity = 0
+      @priority_type = 3 if $game_map.events[@captured[0]] and $game_map.events[@captured[0]].priority_type == 1
+    else
+      @opacity = 255 
+      @priority_type = 1
+    end
+  end
+
+  alias :dl_party_steal_move_by_input :move_by_input
+  def move_by_input
+    if @captured[0] > 0 and !$game_map.interpreter.running?
+      i = false
+      i = true if Input.trigger?(2) or Input.trigger?(4) or Input.trigger?(6) or  Input.trigger?(8)
+      return unless i
+      $game_map.events[@captured[0]].randstep
+      i = true
+      if  @captured[1] > 0 and $data_states[@captured[1]].auto_removal_timing > 0
+        i = false
+        $game_party.members.each do |m|
+          i = m.reduce_turn(@captured[1])
+        end
+      end
+      if i 
+        threshold = 100
+        threshold = $data_states[@captured[1]].chance_by_damage if @captured[1] > 0 and $data_states[@captured[1]].remove_by_damage 
+        if rand(100) < threshold
+       	  $game_map.events[@captured[0]].start
+       	  refresh
+        end
+      end
+    else
+      dl_party_steal_move_by_input
+    end
+  end
+
+end
+
+class Game_Actor < Game_Battler
+  def state_steal_morph(state_id, eventstep, reclass = -1)
+    state = $data_states[state_id]
+    return unless state_id >= 0
+    if !$game_map.interpreter.running? and (hrg != 0.0 or mrg != 0.0 or trg != 0.0)
+      regenerate_all
+      eventstep.randstep
+    end
+    return unless state_id > 0 and state?(state_id) and state.state_steal_morph >= 0
+    if state.remove_by_walking
+      @state_steps[state_id] = 0 if @state_steps[state_id] == nil
+      @state_steps[state_id] -= 1 if @state_steps[state_id] > 0 and !$game_map.interpreter.running?
+      eventstep.randstep
+      if @state_steps[state_id] == 0 and !$game_map.interpreter.running?
+         remove_state(state_id)
+         @result.removed_states = []
+         add_state(state.state_steal_morph) if state.state_steal_morph > 0
+         if reclass < 0
+           $game_player.captured[1] =  state.state_steal_morph
+         else
+           $game_party.owned[reclass][3] = state.state_steal_morph
+         end
+      end
+    end
+  end
+  
+  def reduce_turn(state_id)
+    return false unless state?(state_id)
+    return true if @state_turns[state_id] == 0
+    @state_turns[state_id] -= 1 if @state_turns[state_id] > 0
+    return false
+  end
+  
+end

@@ -1,0 +1,40 @@
+#--------------------------------#
+# Dramatic Lightning Co Presents:
+# Mirror Battler
+#--------------------------------#
+# Use <BattlerMirror> on an Enemy notebox
+# and their image will flip if they are on
+# the right side of the battlefield.
+#--------------------------------#
+
+class Sprite_Battler < Sprite_Base
+
+  attr_accessor :battler
+
+  alias :dl_mirror_initialize :initialize
+  def initialize(viewport, battler = nil)
+    dl_mirror_initialize(viewport, battler)
+    self.mirror = @battler.mirror_half if @battler
+  end
+end
+
+module RPG
+  class BaseItem
+    def mirror_half
+      res = self.note.match(/<BattlerMirror>/i)
+      return res
+    end
+  end
+end
+
+
+class Game_Battler < Game_BattlerBase
+  
+  def mirror_half
+    if enemy?
+      return true if enemy.mirror_half and screen_x > Graphics.width / 2
+    end
+    return false
+  end
+  
+end

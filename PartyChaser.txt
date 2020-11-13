@@ -1,0 +1,85 @@
+#--------------------------------#
+# Dramatic Lightning Co Presents:
+# Party Finder
+#--------------------------------#
+# Events tend to go after the leader even if the party is close.
+# This script not only makes them target the closest members
+# but it also provides regions for hiding and absolute detection.
+# Events can find you if they are close enough, espeically with higher TGR.
+#--------------------------------#
+# Plug and Play.  You probably want to combine this
+# with a script that can allow followers to activate
+# events like Himework's Follower Event Touch.
+# Please note that a member's TGR will affect detection.
+#--------------------------------#
+
+
+
+module DL
+  module PARTYCHASE
+    #Where your party cannot be detected
+    REGIONHIDE = 31
+    #Where your party can be detected even with 0 TGR!
+    REGIONSPOT = 32
+  end
+end
+
+class Game_Event < Game_Character
+  def determine_party
+    bob = [nil, 9999999]
+    bob2 = [0.01, $game_player.actor.tgr].max
+    bob3 = (distance_x_from($game_player.x).abs + distance_y_from($game_player.y).abs)
+    if $game_player.region_id == DL::PARTYCHASE::REGIONHIDE 
+      return $game_player if bob3 <= $game_player.actor.tgr
+    else
+      bob = [$game_player, bob3 / bob2] if (rand < $game_player.actor.tgr or $game_player.region_id == DL::PARTYCHASE::REGIONSPOT)
+    end
+    if $data_system.opt_followers
+      $game_player.followers.each do |follower|
+        if follower.actor != nil
+          bob2 = [0.01,follower.actor.tgr].max
+	  bob3 = (distance_x_from(follower.x).abs + distance_y_from(follower.y).abs)
+          if follower.region_id == DL::PARTYCHASE::REGIONHIDE
+            return follower if bob3 <= follower.actor.tgr
+          else
+            bob = [follower,  bob3 / bob2] if  bob2 < bob[1] and (rand < follower.actor.tgr or follower.region_id == DL::PARTYCHASE::REGIONSPOT)
+          end
+        end
+      end
+    end
+    return bob[0] #$game_player
+  end
+  
+##########################################################################
+
+  
+##################################################  
+
+  def turn_toward_player
+    bob = determine_party
+    bob ?  turn_toward_character(bob) : turn_random #turn_toward_character($game_player)
+  end
+  #--------------------------------------------------------------------------
+  # * Turn away from Player
+  #--------------------------------------------------------------------------
+  def turn_away_from_player
+    bob = determine_party
+    bob ?  turn_away_from_character(bob) : turn_random 
+  end
+  #--------------------------------------------------------------------------
+  # * Move toward Player
+  #--------------------------------------------------------------------------
+  def move_toward_player
+    bob = determine_party
+    bob ?  move_toward_character(bob) : move_random
+  end
+  #--------------------------------------------------------------------------
+  # * Move away from Player
+  #--------------------------------------------------------------------------
+  def move_away_from_player
+    bob = determine_party
+    bob == true ? move_away_from_character(bob) : move_random
+  end
+
+
+end

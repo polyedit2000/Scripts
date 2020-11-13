@@ -1,0 +1,53 @@
+
+module RPG
+  class BaseItem
+    def seal_ex
+      bob = ["","","","",""]
+      res = self.note.match(/<SealName: 1\s*(\d+)\s*>/i)
+      bob[0] = res[1].to_s if res
+      return bob
+    end
+  end
+end
+
+
+class Game_Actor < Game_Battler
+  
+  def seal_ex(index)
+    return nil
+  end
+  
+  def feature_objects
+    bob = equips.compact
+    super + [actor] + [self.class] + equips.select {|equip| }
+  end
+  
+  def param_plus(param_id)
+    equips.compact.inject(super) {|r, item| r += item.params[param_id] }
+  end
+end
+
+
+
+class Window_EquipSlot < Window_Selectable
+  #--------------------------------------------------------------------------
+  # * Draw Item
+  #--------------------------------------------------------------------------
+  alias :dl_seal_draw_item :draw_item
+  def draw_item(index)
+    return unless @actor
+    if @actor.equip_slots[index] and @actor.equip_type_fixed?(@actor.equip_slots[index]) == true #enable?(index) == false
+      rect = item_rect_for_text(index)
+      change_color(system_color, enable?(index))
+      draw_text(rect.x, rect.y, 92, line_height, slot_name(index))
+      change_color(normal_color, enable?(index))
+      
+      bob = ""
+
+      draw_text(rect.x + 92 , rect.y, 92, line_height, bob)
+    else
+      dl_seal_draw_item(index)
+    end
+  end
+end
+

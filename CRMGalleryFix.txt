@@ -1,0 +1,371 @@
+#==================================================================
+# CRM Art Gallery
+# Autor: Raizen
+# Comunidade : http://centrorpg.com/
+# Compatibilidade: RMVXA
+#==================================================================
+# Instruções:
+# É super simples usar e modificar, para modificar as imagens,
+# basta ir na pasta Graphics/Gallery dentro do seu projeto e
+# substituir as imagens dentro daquela pasta por imagens de mesmo nome.
+# Caso tenha apagado alguma imagem acidentalmente aqui está a lista de imagens
+# que o script usa.
+
+# Para chamar a galeria de arte basta.
+# Chamar Script: SceneManager.call(Scene_CRM_Gallery)
+
+=begin
+Nome das imagens
+
+=> superior
+=> superior2
+=> ArrowDown
+=> ArrowLeft
+=> ArrowUp
+=> ArrowRight
+=> background
+
+
+=end
+
+#====================================================================
+
+# Aqui você deverá configurar o script de acordo com as imagens que deseja,
+# e outras configurações.
+
+module CRM_Gallery
+  
+  
+# Coloque o nome das imagens entre aspas em ordem da galeria, com a 
+# switch que libera a imagem ao lado.
+# As imagens são redimensionadas automaticamente, assim qualquer imagem
+# de qualquer tamanho é valido no script.
+
+# Seguindo esse padrão
+
+# 'nome da imagem' => nº da switch ,
+# cuidado para não apagar os {}
+Gallery = {
+'Imagem (1)' => 1 ,
+'Imagem (2)' => 2 ,
+'Imagem (3)' => 3 ,
+'Imagem (4)' => 4 ,
+'Imagem (5)' => 5 ,
+'Imagem (6)' => 6 ,
+'Imagem (7)' => 7 ,
+'Imagem (8)' => 8 ,
+'Imagem (9)' => 9 ,
+'Imagem (10)' => 10 ,
+'Imagem (11)' => 11 ,
+'Imagem (12)' => 12 ,
+'Imagem (13)' => 13 ,
+}
+
+# Here the cursor position for image moving.
+# X
+Cur_X = 182
+# Y
+Cur_Y = 230
+
+# Time it will take in frames to erase the cursors and superior image.
+# (60 frames = 1 second)
+Time = 200
+
+
+# Add the gallery to the default Menu?
+# (false if true is not compatible with the menu being used)
+
+Add = true
+
+# Name on the Menu
+
+Name = "Gallery"
+# =============================================================================
+# =========================Here starts the script===============================
+# =============================================================================
+
+end
+#==============================================================================
+# ** Cache
+#------------------------------------------------------------------------------
+#  Este modulo carrega cada gráfico, cria um objeto de Bitmap e retém ele.
+# Para acelerar o carregamento e preservar memória, este módulo matém o
+# objeto de Bitmap em uma Hash interna, permitindo que retorne objetos
+# pré-existentes quando mesmo Bitmap é requerido novamente.
+#==============================================================================
+
+
+module Cache
+  #--------------------------------------------------------------------------
+  # * Carregamento dos gráficos de animação
+  #     filename : nome do arquivo
+  #     hue      : informações da alteração de tonalidade
+  #--------------------------------------------------------------------------
+  def self.gallery(filename)
+    load_bitmap("Graphics/Gallery/", filename)
+  end
+end
+#==============================================================================
+# ** Scene_CRM_Gallery
+#------------------------------------------------------------------------------
+#  Esta classe executa a preview das imagens
+#==============================================================================
+
+class Scene_CRM_Gallery < Scene_Base
+  #--------------------------------------------------------------------------
+  # * Inicialização do processo
+  # * Carregamento de Imagens (pode demorar caso tenha muitas imagens)
+  #--------------------------------------------------------------------------
+  def start
+    super
+    @background = Sprite.new
+    @background.bitmap = Cache.gallery("background")
+    @front = Sprite.new
+    @front.bitmap = Cache.gallery("superior")
+    @front.z = 20
+    @gallery = Array.new
+    @gallery_pic = Array.new
+    @number = Array.new
+    current_gallery = CRM_Gallery::Gallery.flatten
+    curr_pic = -3
+    firsttime = false
+    until @gallery.size > 6
+
+      for n in 0...current_gallery.size/2
+        if $game_switches[current_gallery[(n*2)+1]]
+          @gallery.push(current_gallery[n*2]) 
+          if firsttime == false and $current_pic != nil and $current_pic == current_gallery[n*2]
+            curr_pic = @gallery.size - 1 - 3
+            firsstime = true
+          end
+        end
+        n += 1
+      end
+      if @gallery.size == 0
+        terminate
+        return_scene
+        return
+      end
+      if firsttime  == false
+        if $current_pic == nil or !@gallery.include?($current_pic)
+          $current_pic = @gallery[0]
+          firsttime = true
+        end
+      end
+      
+    end
+    @gallery.rotate!(curr_pic)
+    
+    for n in 0...@gallery.size
+      @number[n] = n
+      @gallery_pic[n] = Sprite.new
+      @gallery_pic[n].bitmap = Cache.gallery(@gallery[n])
+      @gallery_pic[n].x = 130*n - 170
+      @gallery_pic[n].y = 325
+      @gallery_pic[n].zoom_x = 108.8/@gallery_pic[n].width
+      @gallery_pic[n].zoom_y = 83.2/@gallery_pic[n].height
+    end
+    
+    
+    @preview = Sprite.new
+    @preview.bitmap = Cache.gallery(@gallery[3])
+    @preview.zoom_x = 299.2/@preview.width
+    @preview.zoom_y = 228.8/@preview.height
+    @preview.x = 120
+    @preview.y = 55
+  end
+  #--------------------------------------------------------------------------
+  # * finalização do processo
+  #--------------------------------------------------------------------------
+  def terminate
+    @gallery[@number[3]] if @number
+    super
+    @gallery_pic.each {|gallery| gallery.bitmap.dispose ; gallery.dispose}
+    @front.bitmap.dispose
+    @background.bitmap.dispose
+    @front.dispose
+    @background.dispose
+    if @preview
+    @preview.bitmap.dispose 
+    @preview.dispose
+  end
+
+  end
+  #--------------------------------------------------------------------------
+  # * Atualização da tela
+  #--------------------------------------------------------------------------
+  def update
+    super
+    for n in 0...@gallery_pic.size
+      if n > 0 && n < @gallery_pic.size - 1
+        if @gallery_pic[@number[n]].x > 130 * n - 170
+          @gallery_pic[@number[n]].x -= 13
+        elsif @gallery_pic[@number[n]].x < 130 * n - 170
+          @gallery_pic[@number[n]].x += 13
+        end
+      else
+        @gallery_pic[@number[n]].x = 130 * n - 170
+      end
+      if n == 3
+        @gallery_pic[@number[n]].y -= 4 if @gallery_pic[@number[n]].y > 305
+      else
+        @gallery_pic[@number[n]].y += 4 if @gallery_pic[@number[n]].y < 325
+      end
+    end
+    return_scene && Sound.play_cancel if Input.trigger?(:B)
+    if Input.trigger?(:RIGHT)
+      @number.rotate!(1)
+      $current_pic =  @gallery[@number[3]]
+      Sound.play_cursor
+      @preview.bitmap = Cache.gallery(@gallery[@number[3]])
+      @preview.zoom_x = 299.2/@preview.width
+      @preview.zoom_y = 228.8/@preview.height
+    end
+    if Input.trigger?(:LEFT)
+      @number.rotate!(-1) 
+      $current_pic =  @gallery[@number[3]]
+      Sound.play_cursor
+      @preview.bitmap = Cache.gallery(@gallery[@number[3]])
+      @preview.zoom_x = 299.2/@preview.width
+      @preview.zoom_y = 228.8/@preview.height
+    end
+    if Input.trigger?(:C)
+      $gallery_crm_pic = @gallery[@number[3]]
+      $current_pic =  @gallery[@number[3]]
+      Sound.play_ok
+      SceneManager.call(Scene_Show_Gal)
+    end
+  end
+end
+
+#==============================================================================
+# ** Scene_Show_Gal
+#------------------------------------------------------------------------------
+#  Esta classe executa a imagem após a escolha
+#==============================================================================
+
+  #--------------------------------------------------------------------------
+  # * Inicialização do processo
+  # * Carregamento de Imagens (pode demorar caso seja muito grande a imagem)
+  #--------------------------------------------------------------------------
+  
+class Scene_Show_Gal < Scene_Base
+  def start
+    super
+    @pic = Sprite.new
+    @pic.bitmap = Cache.gallery($gallery_crm_pic)
+    @pic.x = Graphics.width/2 - @pic.width/2
+    @pic.y = Graphics.height/2 - @pic.height/2
+    @all_zoom = false
+    @get_i = ["superior2", "ArrowDown", "ArrowUp", "ArrowRight", "ArrowLeft"]
+    @images = Array.new
+    @reset = 0
+    for n in 1..4
+      @images[n] = Sprite.new
+      @images[n].bitmap = Cache.gallery(@get_i[n])
+      @images[n].x = CRM_Gallery::Cur_X
+      @images[n].y = CRM_Gallery::Cur_Y
+      @images[n].opacity = 100
+    end
+    @images[0] = Sprite.new
+    @images[0].bitmap = Cache.gallery(@get_i[0])
+    @images[0].opacity = 170
+    update
+  end
+  
+  #--------------------------------------------------------------------------
+  # * Atualização da tela
+  #--------------------------------------------------------------------------
+  def update
+    super
+    return_scene && Sound.play_cancel if Input.trigger?(:B)
+      for n in 1..4
+        @reset >= CRM_Gallery::Time*3 ? @images[n].opacity = 0 : @images[n].opacity = 100
+      end
+      @reset >= CRM_Gallery::Time*3 ? @images[0].opacity = 0 : @images[0].opacity = 170
+    unless @all_zoom
+      if Input.press?(:UP) && @pic.y < -3
+        @pic.y += 4
+        @images[2].opacity = 255
+      end
+      if Input.press?(:DOWN) && @pic.y > Graphics.height - @pic.height
+        @pic.y -= 4 
+        @images[1].opacity = 255
+      end
+      if Input.press?(:RIGHT) && @pic.x > Graphics.width - @pic.width
+        @pic.x -= 4 
+        @images[3].opacity = 255
+      end
+      if Input.press?(:LEFT) && @pic.x < 0
+        @pic.x += 4 
+        @images[4].opacity = 255
+      end
+      if Input.trigger?(:C)
+        @all_zoom = true
+        Sound.play_ok
+        @pic.zoom_x = Graphics.width.to_f / @pic.width
+        @pic.zoom_y = Graphics.height.to_f / @pic.height
+        @pic.x = 0
+        @pic.y = 0
+      end
+    else
+      if Input.trigger?(:C)
+        @all_zoom = false
+        Sound.play_ok
+        @pic.zoom_x = 1
+        @pic.zoom_y = 1
+        @pic.x = Graphics.width/2 - @pic.width/2
+        @pic.y = Graphics.height/2 - @pic.height/2
+      end
+    end 
+    @images.each {|image| image.opacity == 255 ? @reset = 0 : @reset += 1}
+  end
+  #--------------------------------------------------------------------------
+  # * Finalizando o processo
+  #--------------------------------------------------------------------------
+  def terminate
+    $current_pic = $gallery_crm_pic
+    super
+    @pic.bitmap.dispose
+    @pic.dispose
+    @images.each {|image| image.bitmap.dispose ; image.dispose}
+  end
+end
+
+if CRM_Gallery::Add
+#==============================================================================
+# ** Scene_Menu
+#------------------------------------------------------------------------------
+#  Esta classe executa o processamento da tela de menu.
+#==============================================================================
+
+class Scene_Menu < Scene_MenuBase
+  def create_command_window
+    @command_window = Window_MenuCommand.new
+    @command_window.set_handler(:item,      method(:command_item))
+    @command_window.set_handler(:skill,     method(:command_personal))
+    @command_window.set_handler(:equip,     method(:command_personal))
+    @command_window.set_handler(:status,    method(:command_personal))
+    @command_window.set_handler(:gallery,  method(:command_gallery))
+    @command_window.set_handler(:formation, method(:command_formation))
+    @command_window.set_handler(:save,      method(:command_save))
+    @command_window.set_handler(:game_end,  method(:command_game_end))
+    @command_window.set_handler(:cancel,    method(:return_scene))
+  end
+  def command_gallery
+    SceneManager.call(Scene_CRM_Gallery)
+  end
+end
+#==============================================================================
+# ** Window_MenuCommand
+#------------------------------------------------------------------------------
+#  Esta janela exibe os comandos do menu.
+#==============================================================================
+class Window_MenuCommand < Window_Command
+alias raizen_add_main_commands add_main_commands
+  def add_main_commands
+    raizen_add_main_commands
+    add_command(CRM_Gallery::Name, :gallery, main_commands_enabled)
+  end
+end
+end

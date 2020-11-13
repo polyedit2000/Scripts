@@ -1,0 +1,205 @@
+module Vocab
+  ThornHit = "%s got too close!"
+end
+
+=begin
+#==============================================================================
+ ** Thorns
+ Author: Dramatic Lightning Co.
+------------------------------------------------------------------------------
+ Thorns occur when A gets close and hits B.  This will occur from Physical
+ Attacks, so place <Ranged> inside a skill to prevent this.
+------------------------------------------------------------------------------
+ Place <ThornsHP: formula> inside a battler and any other related entries to
+ have the battler deal that much damage.  Use a for Thorned battler and b
+ for anyone attacking them (p=party,t=troop,v=variables,s=switches).
+ Place <ThornsState: state_id> inside a battleres and any other related entries
+ to have the battler deal those states (separate multiple states with commas).
+#==============================================================================
+=end
+module RPG
+  class BaseItem
+    def ranged_attack?
+      return self.note.match(/<Ranged>/i)
+    end
+
+    def thorns_hp(user, target)
+      bob = "0"
+      res = self.note.match(/<ThornsHP:\s*(.*?)\s*>/i)
+      if res
+        bob = res[1].to_s
+      end
+      bob = eval_thorns(bob, target, user)
+      return bob.to_i
+    end
+    
+    def thorns_state
+      if @note =~ (/<ThornsState:\s*(.*?)\s*>/i)
+        ints = []
+        for x in $1.split(",")
+          ints.push(x.to_i)
+        end
+        return ints
+      else
+        return []
+      end
+    end
+    
+    def eval_thorns(formula, a, b, p=$game_party, t=$game_troop, v=$game_variables, s=$game_switches)
+      eval(formula)
+    end
+  end
+end
+
+
+class Window_BattleLog < Window_Selectable
+  alias :dl_thorns_display_damage :display_damage
+  def display_damage(target, item)
+    dl_thorns_display_damage(target, item)
+    display_thorns(target, item)
+  end
+  
+  def display_thorns(target, item)
+    if target.result.thorn_name != nil
+      add_text(sprintf(Vocab::ThornHit, target.result.thorn_name.name))
+      wait
+      if target.result.thorn_damage > 0
+        target.result.thorn_name.hp -= target.result.thorn_damage
+        SceneManager.scene.refresh_status
+        target.result.thorn_name.perform_damage_effect
+        target.result.thorn_name.perform_collapse_effect if target.result.thorn_name.dead?
+        add_text(target.result.thorn_damage_text)
+        wait
+        back_one unless target.result.thorn_state.empty? or target.result.thorn_name.dead?
+      end
+      if !target.result.thorn_state.empty?
+        add_text("") if line_number < max_line_number
+        target.result.thorn_state.each do |state_id|
+          state = $data_states[state_id]
+          state_msg = target.result.thorn_name.actor? ? state.message1 : state.message2
+          target.result.thorn_name.perform_collapse_effect if state.id == target.result.thorn_name.death_state_id
+          next if state_msg.empty?
+          next if target.result.thorn_name.dead?
+          next if target.result.thorn_name.state?(state_id)
+          target.result.thorn_name.add_new_state(state_id) 
+          target.result.thorn_name.reset_state_counts(state_id)
+          SceneManager.scene.refresh_status
+          replace_text(target.result.thorn_name.name + state_msg)
+          wait
+          wait_for_effect
+        end
+        back_one if last_text.empty?
+      end
+    end
+  end
+
+  
+end
+
+class Game_ActionResult
+  attr_accessor :thorn_damage    
+  attr_accessor :thorn_name
+  attr_accessor :thorn_state
+  
+  alias :dl_thorn_clear_damage_values :clear_damage_values
+  def clear_damage_values
+    dl_thorn_clear_damage_values
+    @thorn_damage = 0
+    @thorn_name = nil
+    @thorn_state = []
+  end
+  
+  def thorn_text
+    fmt = @thorn_name.actor? ? Vocab::ActorDamage : Vocab::EnemyDamage
+    sprintf(fmt, @thorn_name.name, @thorn_damage)
+  end
+  
+  def thorn_damage_text
+    fmt = @thorn_name.actor? ? Vocab::ActorDamage : Vocab::EnemyDamage
+    sprintf(fmt, @thorn_name.name, @thorn_damage)
+  end
+  
+end
+
+class Game_Battler < Game_BattlerBase  
+  def item_apply(user, item)
+    @result.clear
+    @result.used = item_test(user, item)
+    @result.missed = (@result.used && rand >= item_hit(user, item))
+    @result.evaded = (!@result.missed && rand < item_eva(user, item))
+    if @result.hit?
+      unless item.damage.none?
+        @result.critical = (rand < item_cri(user, item))
+        make_damage_value(user, item)
+        execute_damage(user)
+        if ranged_atk(user,item)
+          @result.thorn_damage = thorns_hp(user)
+          thorns_state.each do |state_id|
+            if !user.state?(state_id)
+              @result.thorn_state.push(state_id).uniq!
+            end
+          end
+          @result.thorn_name = user if @result.thorn_damage > 0 or !thorns_state.empty?
+        end
+      end
+      item.effects.each {|effect| item_effect_apply(user, item, effect) }
+      item_user_effect(user, item)
+    end
+  end
+  
+  def ranged_atk(attacker,item)
+    if item.physical?
+      if item.ranged_attack?
+        return false
+      elsif item.is_a?(RPG::Skill) and item.id == attacker.attack_skill_id 
+        if attacker.actor? and attacker.weapons.any? {|w| w.ranged_attack? }
+          return false
+        elsif attacker.enemy? and attacker.enemy.ranged_attack?
+          return false
+        end
+      end
+      return true
+    end
+    return false
+  end
+  
+  def thorns_hp(user)
+    bob = 0
+    @states.each do |i|
+      bob += $data_states[i].thorns_hp(user, self)
+    end
+    if actor?
+      armors.each do |a|
+        bob += a.thorns_hp(user, self)
+      end
+      weapons.each do |w|
+        bob += w.thorns_hp(user, self)
+      end
+      bob += self.class.thorns_hp(user, self)
+      bob += actor.thorns_hp(user, self)
+    else
+      bob += enemy.thorns_hp(user, self)
+    end
+    return [bob , 0].max
+  end
+  
+  def thorns_state
+    bob = []
+    @states.each do |i|
+      bob += $data_states[i].thorns_state
+    end
+    if actor?
+      armors.each do |a|
+        bob += a.thorns_state
+      end
+      weapons.each do |w|
+        bob += w.thorns_state
+      end
+      bob += self.class.thorns_state
+      bob += actor.thorns_state
+    else
+      bob += enemy.thorns_state
+    end
+    return bob.uniq.sort
+  end
+end

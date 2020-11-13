@@ -1,0 +1,47 @@
+module RPG
+  class BaseItem
+    def random_hue
+      xshift = 0
+      res = self.note.match(/<RandomHue:\s*(\d+)\s*>/i)
+      if res
+        xshift = [res[1].to_i,180].min
+      end
+      return xshift
+    end
+    
+    def screen_x_shift
+      xshift = [0,0]
+      res = self.note.match(/<RandomShift:\s*(\d+)\s*(\d+)\s*>/i)
+      if res
+        xshift[0] = res[1].to_i
+        xshift[1] = res[2].to_i
+      end
+      return xshift
+    end
+    
+  end
+end
+
+class Game_Enemy < Game_Battler
+  alias :dl_random_hue_initialize :initialize
+  def initialize(index, enemy_id)
+    dl_random_hue_initialize(index, enemy_id)
+    @battler_hue += rand($data_enemies[@enemy_id].random_hue) if $data_enemies[@enemy_id].random_hue > 0
+  end
+  def screen_x_shift
+    $data_enemies[@enemy_id].screen_x_shift
+  end
+  
+end
+
+class Sprite_Battler < Sprite_Base
+  alias :dl_random_hue_initialize :initialize
+  def initialize(viewport, battler = nil)
+    dl_random_hue_initialize(viewport, battler)
+    if battler and battler.enemy?
+      bob = battler.screen_x_shift
+      @battler.screen_x += rand(bob[0]) * (rand(2) ? 1 : -1 ) if bob[0] > 0
+      @battler.screen_y += rand(bob[1]) * (rand(2) ? 1 : -1 ) if bob[1] > 0
+    end
+  end
+end

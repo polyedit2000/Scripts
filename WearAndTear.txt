@@ -1,0 +1,298 @@
+#--------------------------------#
+# Dramatic Lightning Co Presents:
+# Wear And Tear
+#--------------------------------#
+# Your Equipment now has a chance to become a different
+# Equipment when removing them.
+#--------------------------------#
+# Place <TearTo: ID chance> in a weapon or armor, ID giving you the matching equipment type.
+# 100 chance will alway trigger the change.
+# You can also use a battler's tear_equip([slot_id]) to tear different equipments.
+# Setting CHANGEEQUIP below to true will make the change occur when equipping items.
+# Setting DAMAGETEAR below to true will make the change occur after damage is dealt in battle.
+#--------------------------------#
+# <Unremovable> prevents you from taking off the equipment
+# until the equipment breaks.
+#--------------------------------#
+# <RepairTo: ID> will repair equipment to that id if you use $game_party.repair for everything
+# or an actor like $game_party.members[0].repair for that actor.
+# You can also use .repair("w"/"a", item_id) if you want to restore items to the specified id. 
+# There's also .repair_price and .repair_count to get a quick price/count.
+#--------------------------------#
+
+
+module DL
+  module TEAR
+    CHANGEEQUIP = true
+    DAMAGETEAR = false
+    SOUNDBREAK = ["Break", 80, 140]
+  end
+end
+
+module RPG
+  class BaseItem
+    def tearable
+      bob = [0,-1.0]
+      res = self.note.match(/<TearTo:\s*(\d+)\s*(\d+)\s*>/i)
+      if res
+        bob[0] = res[1].to_i
+        bob[1] = res[2].to_f/100.0
+      end
+      return bob
+    end
+    def tear_repair
+      bob = 0
+      res = self.note.match(/<RepairTo:\s*(\d+)\s*>/i)
+      bob = res[1].to_i if res
+      return bob
+    end
+    def tear_perm
+      res = self.note.match(/<Unremovable>/i)
+      return true if res
+      return false
+    end
+  end
+end
+
+class Game_Enemy < Game_Battler
+  def tear_equip(slot_id, tested = false)
+  end
+  def repair(type = nil ,item_id = nil)
+  end
+end
+
+class Game_Party < Game_Unit
+  def repair(type = nil ,item_id = nil)
+    bob = nil
+    if type and item_id
+      if "a" == type.downcase
+        bob = $data_armors[item_id]
+      elsif "w" == type.downcase
+        bob = $data_weapons[item_id]
+      end
+    end
+    repair_equips(bob)
+  end
+  
+  
+  def repair_equips(item= nil)
+    all_members.each do |member|
+     member.repair_equips(item)
+    end
+   repair_items = equip_items.select{|i| i.tear_repair > 0 }
+   if item != nil
+     repair_items = equip_items.select{|i| i.tear_repair > 0 and i.tear_repair == item.id and (item.is_a?(RPG::Weapon) == i.is_a?(RPG::Weapon))}
+   end
+   repair_items.each do |item|
+    bobby = item.is_a?(RPG::Weapon) ? $data_weapons[item.tear_repair] : $data_armors[item.tear_repair] 
+    bob = item_number(item)
+    lose_item(item, bob)
+    gain_item(bobby, bob)
+   end
+ end
+ 
+   
+  def repair_price(item = nil)
+    repair_p = 0
+    all_members.each do |member|
+     repair_p += member.repair_price(item)
+    end
+   repair_items = equip_items.select{|i| i.tear_repair > 0 }
+   if item != nil
+     repair_items = equip_items.select{|i| i.tear_repair > 0 and i.tear_repair == item.id and (item.is_a?(RPG::Weapon) == i.is_a?(RPG::Weapon))}
+   end
+   repair_items.each do |item|
+    bobby = item.is_a?(RPG::Weapon) ? $data_weapons[item.tear_repair] : $data_armors[item.tear_repair] 
+    repair_p += ((item.price - bobby.price).abs / 2) *  item_number(item)
+   end
+   return repair_p.to_i
+ end
+ 
+  def repair_count(item = nil)
+    repair_p = 0
+    all_members.each do |member|
+     repair_p += member.repair_count(item)
+    end
+   repair_items = equip_items.select{|i| i.tear_repair > 0 }
+   if item != nil
+     repair_items = equip_items.select{|i| i.tear_repair > 0 and i.tear_repair == item.id and (item.is_a?(RPG::Weapon) == i.is_a?(RPG::Weapon))}
+   end
+   repair_items.each do |item|
+    bobby = item.is_a?(RPG::Weapon) ? $data_weapons[item.tear_repair] : $data_armors[item.tear_repair] 
+    repair_p += item_number(item)
+   end
+   return repair_p.to_i
+  end
+  
+  
+  alias :dl_tr_gain_item :gain_item
+  def gain_item(item, amount, include_equip = false)
+
+    if amount >= 0
+      dl_tr_gain_item(item, amount, include_equip)
+    elsif
+      new_number = amount
+      repair_items = [item]
+      if item != nil
+        repair_items += equip_items.select{|i| item and item.tear_repair > 0 and item.tear_repair != item.id and item.tear_repair == i.id and (item.is_a?(RPG::Weapon) == i.is_a?(RPG::Weapon))}
+      end
+      repair_items.each do |item| 
+
+        container = item_container(item.class)
+        next unless container
+
+        new_number += item_number(item)
+
+        container[item.id] = [[new_number, 0].max, max_item_number(item)].min
+        container.delete(item.id) if container[item.id] == 0
+
+        if include_equip && new_number < 0
+          new_number += discard_members_equip(item, -new_number)
+        end	
+      end
+    end
+    $game_map.need_refresh = true
+  end
+  
+  def discard_members_equip(item, amount)
+    n = amount
+    members.each do |actor|
+      while n > 0 && actor.equips.include?(item)
+        actor.discard_equip(item)
+        n -= 1
+      end
+    end
+    return n
+  end
+
+end
+
+
+class Game_Actor < Game_Battler
+  
+  alias :dl_wt_make_damage_value :make_damage_value
+  def make_damage_value(user, item)
+    dl_wt_make_damage_value(user, item)
+    if DL::TEAR::DAMAGETEAR
+     (@result.critical) ? tear_equip([0,1,2,3,4], true) : tear_equip([0,1,2,3,4])
+    end
+  end
+  
+  
+  def repair(type = nil ,item_id = nil)
+    bob = nil
+    if type and item_id
+      if "a" == type.downcase
+        bob = $data_armors[item_id]
+      elsif "w" == type.downcase
+        bob = $data_weapons[item_id]
+      end
+    end
+    repair_equips(bob)
+  end
+  
+  def repair_equips(item = nil)
+    equips.each do |equip|
+      if equip and equip.tear_repair > 0
+        bob = equip.is_a?(RPG::Weapon) ? $data_weapons[equip.tear_repair] : $data_armors[equip.tear_repair] 
+        if item
+         force_change_equip(equips.index(equip), bob) if equip.tear_repair == item.id
+        else
+         force_change_equip(equips.index(equip), bob) 
+        end
+      end
+    end
+    refresh
+  end
+  
+  def repair_price(item = nil)
+    repair_p = 0
+    equips.each do |equip|
+      if equip and equip.tear_repair > 0
+        bob = equip.is_a?(RPG::Weapon) ? $data_weapons[equip.tear_repair] : $data_armors[equip.tear_repair] 
+        if item
+         repair_p += (bob.price - equip.price).abs / 2 if equip.tear_repair == item.id
+        else
+         repair_p += (bob.price - equip.price).abs / 2
+        end
+      end
+    end
+    return repair_p.to_i
+  end
+  
+  def repair_count(item = nil)
+    repair_p = 0
+    equips.each do |equip|
+      if equip and equip.tear_repair > 0
+        bob = equip.is_a?(RPG::Weapon) ? $data_weapons[equip.tear_repair] : $data_armors[equip.tear_repair] 
+        if item
+         repair_p += 1 if equip.tear_repair == item.id
+        else
+         repair_p += 1
+        end
+      end
+    end
+    return repair_p.to_i
+  end
+
+  def tear_equip(slot_id, tested = false)
+    if !slot_id.is_a?(Array)
+      slot_id = [slot_id]
+    end
+    slot_id.each do |slot|
+      bob = tested ? true : false
+      bob = true if tested == false and equips[slot] and rand < equips[slot].tearable[1]
+      if bob
+        item = nil
+        if equips[slot] and equips[slot].tearable[0] > 0
+          item = (equips[slot].is_a?(RPG::Weapon) ? $data_weapons[equips[slot].tearable[0]] : $data_armors[equips[slot].tearable[0]])
+        end
+        if $game_party.in_battle
+          $game_message.add(@name + "'s " + equips[slot].name + " broke!")
+        end
+        RPG::SE.new(DL::TEAR::SOUNDBREAK[0], DL::TEAR::SOUNDBREAK[1], DL::TEAR::SOUNDBREAK[2]).play
+        @equips[slot].object = item
+        release_unequippable_items()
+        refresh
+      end
+    end
+    #BattleManager.wait_for_message if $game_party.in_battle
+  end
+  
+  def optimize_equipments
+    clear_equipments
+    equip_slots.size.times do |i|
+
+      next if !equip_change_ok?(i)
+      items = $game_party.equip_items.select do |item|
+
+        item.etype_id == equip_slots[i] &&
+        equippable?(item) && item.performance >= 0
+
+      end
+      #bob = items.max_by {|item| item.smash_power } 
+      bob = items.max_by {|item| item.performance }# if bob == nil
+      change_equip(i, bob) if equips[i] == nil
+
+    end
+  end
+
+  alias :dl_wt_change_equip :change_equip
+  def change_equip(slot_id, item)
+    if  DL::TEAR::CHANGEEQUIP and equips[slot_id] and   rand < equips[slot_id].tearable[1]
+      tear_equip(slot_id, true)
+    else
+      dl_wt_change_equip(slot_id, item) if equips[slot_id] == nil or equips[slot_id].tear_perm == false
+    end
+  end
+  
+  def change_equip_by_id(slot_id, item_id)
+    item = (equip_slots[slot_id] == 0 ? $data_weapons[item_id] : $data_armors[item_id])
+    return unless trade_item_with_party(item, equips[slot_id])
+    return if item && equip_slots[slot_id] != item.etype_id
+    @equips[slot_id].object = item
+    refresh
+  end
+  
+end
+

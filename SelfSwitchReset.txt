@@ -1,0 +1,59 @@
+#--------------------------------#
+# Dramatic Lightning Co Presents:
+# Self Switch Reseter
+#--------------------------------#
+# You can reset your Event's Self Switches with this script!
+# Create a Comment in the first line of your Event page and
+# place <resetss: 0abcd> there.  abcd are the letters of the
+# self switch you want to reset.
+#--------------------------------#
+# By default, you only need to place the notetag in the first
+# page and it'll reset the self switches regardless of what
+# page you're on.  You can put 0 (zero) in the notetag so that it'll
+# only affect the first page.  Alternatively, you can place the
+# notetags in each of the other pages.
+#--------------------------------#
+
+
+module DL
+  module Renew
+    Regex = /<resetss:\s*(\w+)\s*>/i
+  end
+end
+
+module RPG
+  class Event::Page
+
+    def reset_ss
+      bob = ""
+      @list.each {|cmd|
+        if cmd.code == 108 && res = cmd.parameters[0].match(DL::Renew::Regex)
+          bob = res[1].to_s
+        end
+      }
+      return bob
+    end
+  end
+end
+
+
+class Game_Event < Game_Character
+  alias dl_renew_initialize initialize
+  def initialize(map_id, event)
+    dl_renew_initialize(map_id, event)
+    renew_self(map_id, event)
+    refresh 
+  end
+
+    def renew_self(map_id, event)
+      bob = ""
+      bob = @event.pages[0].reset_ss  if @event.pages[0]
+      bob = @page.reset_ss if bob == "" or bob.include? "0"
+      
+      $game_self_switches[[map_id, event.id, "A"]] = false if bob.include? "a"
+      $game_self_switches[[map_id, event.id, "B"]] = false if bob.include? "b"
+      $game_self_switches[[map_id, event.id, "C"]] = false if bob.include? "c"
+      $game_self_switches[[map_id, event.id, "D"]] = false if bob.include? "d"
+    end
+    
+end

@@ -1,0 +1,27 @@
+module RPG
+  class BaseItem
+    def color_battler_shift
+      bob = -1
+      res = self.note.match(/<ColorBattler:\s*(\d+)\s*>/i)
+      bob = res[1].to_i if res
+      return bob
+    end
+    def color_state
+      res = self.note.match(/<ColorState>/i)
+      return res
+    end
+  end
+end
+
+class Game_Battler < Game_BattlerBase
+  def color_battler_shift
+    if actor?
+      actor.color_battler_shift
+    elsif enemy?
+      enemy.color_battler_shift
+    else
+      -1
+    end
+  end
+  
+end

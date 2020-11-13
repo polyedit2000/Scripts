@@ -1,0 +1,150 @@
+=begin
+#===============================================================================
+ Title: State characters
+ Author: Hime
+ Date: Sep 6, 2015
+--------------------------------------------------------------------------------
+ ** Change log
+ Sep 6, 2015
+   - supports class note-tag
+ Mar 30, 2013
+   - Initial release
+--------------------------------------------------------------------------------   
+ ** Terms of Use
+ * Free to use in non-commercial projects
+ * Contact me for commercial use
+ * No real support. The script is provided as-is
+ * Will do bug fixes, but no compatibility patches
+ * Features may be requested but no guarantees, especially if it is non-trivial
+ * Credits to Hime Works in your project
+ * Preserve this header
+--------------------------------------------------------------------------------
+ ** Description
+ 
+ This script allows you to setup "state characters" for each actor.
+ 
+ A state character is just a character picture that will be used when a certain state has
+ been applied.
+ 
+ When the state is removed, the character picture also reverts to the original (or
+ maybe another state character, depending on how many states are applied).
+ 
+--------------------------------------------------------------------------------
+ ** Installation
+ 
+ Place this below Materials and above Main.
+
+--------------------------------------------------------------------------------
+ ** Usage 
+ 
+ Note-tag your actors or classes with
+ 
+   <state char: id name index>
+   
+ Where
+   `id` is the state ID that this character will apply to
+   `name` is the name of the character, in the Graphics/characters folder
+   `index` is the index of the character.
+   
+ You will need to index the character sheet appropriately.
+ 
+ 0 1 2 3
+ 4 5 6 7
+ 
+ If you are using one character per sheet, it is just 0.
+ 
+ Note that state priority determines which character will be shown if multiple
+ states are applied. States with higher priorities will be shown over states
+ with lower priorities. In the case of a tie, the state that was first applied
+ will be used.
+#===============================================================================
+=end
+$imported = {} if $imported.nil?
+$imported["TH_Statecharacters"] = true
+#===============================================================================
+# ** Configuration
+#===============================================================================
+module TH
+  module State_characters
+    
+    # state ID, character name, character index
+    Regex = /<state char:\s*(\d+)\s*(\w+)\s*(\d+)>/i
+  end
+end
+
+module RPG
+  class BaseItem
+    
+    def state_characters
+      return @state_characters unless @state_characters.nil?
+      load_notetag_state_characters
+      return @state_characters
+    end
+    
+    def state_character_list
+      return @state_character_list unless @state_character_list.nil?
+      load_notetag_state_characters
+      return @state_character_list
+    end
+    
+    def load_notetag_state_characters
+      @state_characters = {}
+      res = self.note.scan(TH::State_characters::Regex)      
+      unless res.empty?
+        res.each do |(state_id, character_name, character_index)|
+          @state_characters[state_id.to_i] = [character_name, character_index.to_i]
+        end
+      end
+      @state_character_list = @state_characters.keys
+    end
+  end
+end
+
+class Game_Actor < Game_Battler
+  
+  alias :th_state_characters_character_name :character_name
+  def character_name
+    @state_actor_character = nil
+    @state_class_character = nil
+    name = states.detect {|state| actor.state_character_list.include?(state.id)}
+    if name
+      @state_actor_character = name
+      return actor.state_characters[@state_actor_character.id][0]
+    else
+      name = states.detect {|state| self.class.state_character_list.include?(state.id)}            
+      if name
+        @state_class_character = name
+        return self.class.state_characters[@state_class_character.id][0]
+      else        
+        return th_state_characters_character_name
+      end
+    end
+  end
+  
+  alias :th_state_characters_character_index :character_index
+  def character_index
+    if @state_actor_character
+      return actor.state_characters[@state_actor_character.id][1]
+    elsif @state_class_character
+      return self.class.state_characters[@state_class_character.id][1]
+    else
+      return th_state_characters_character_index
+    end
+  end
+  
+end
+
+class Game_Player < Game_Character
+  def update
+    refresh
+    last_real_x = @real_x
+    last_real_y = @real_y
+    last_moving = moving?
+    move_by_input
+    super
+    update_scroll(last_real_x, last_real_y)
+    update_vehicle
+    update_nonmoving(last_moving) unless moving?
+    @followers.update
+  end
+end

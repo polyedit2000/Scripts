@@ -1,0 +1,193 @@
+=begin
+#===============================================================================
+ Title: State battlers
+ Author: Hime
+ Date: Sep 6, 2015
+--------------------------------------------------------------------------------
+ ** Change log
+ Sep 6, 2015
+   - supports class note-tag
+ Mar 30, 2013
+   - Initial release
+--------------------------------------------------------------------------------   
+ ** Terms of Use
+ * Free to use in non-commercial projects
+ * Contact me for commercial use
+ * No real support. The script is provided as-is
+ * Will do bug fixes, but no compatibility patches
+ * Features may be requested but no guarantees, especially if it is non-trivial
+ * Credits to Hime Works in your project
+ * Preserve this header
+--------------------------------------------------------------------------------
+ ** Description
+ 
+ This script allows you to setup "state battlers" for each enemy.
+ 
+ A state battler is just a battler picture that will be used when a certain state has
+ been applied.
+ 
+ When the state is removed, the battler picture also reverts to the original (or
+ maybe another state battler, depending on how many states are applied).
+ 
+--------------------------------------------------------------------------------
+ ** Installation
+ 
+ Place this below Materials and above Main.
+
+--------------------------------------------------------------------------------
+ ** Usage 
+ 
+ Note-tag your enemys or classes with
+ 
+   <state battler: id name hue>
+   
+ Where
+   `id` is the state ID that this battler will apply to
+   `name` is the name of the battler, in the Graphics/battlers folder
+   `hue` is the hue of the battler.
+   
+ You will need to hue the battler sheet appropriately.
+ 
+ 0 1 2 3
+ 4 5 6 7
+ 
+ If you are using one battler per sheet, it is just 0.
+ 
+ Note that state priority determines which battler will be shown if multiple
+ states are applied. States with higher priorities will be shown over states
+ with lower priorities. In the case of a tie, the state that was first applied
+ will be used.
+#===============================================================================
+=end
+$imported = {} if $imported.nil?
+$imported["TH_Statebattlers"] = true
+#===============================================================================
+# ** Configuration
+#===============================================================================
+
+class Game_Actor < Game_Battler
+  #--------------------------------------------------------------------------
+  # new method: screen_x
+  #--------------------------------------------------------------------------
+  def screen_x
+    return 0 unless SceneManager.scene_is?(Scene_Battle)
+    constant = 128 + self.index * 96
+    return constant
+  end
+  
+  #--------------------------------------------------------------------------
+  # new method: screen_y
+  #--------------------------------------------------------------------------
+  def screen_y
+    return Graphics.height - 112
+  end
+  
+  #--------------------------------------------------------------------------
+  # new method: screen_z
+  #--------------------------------------------------------------------------
+  def screen_z; return 100; end
+    
+  #--------------------------------------------------------------------------
+  # overwrite method: use_sprite?
+  #--------------------------------------------------------------------------
+  def use_sprite?; return true; end
+    
+  #--------------------------------------------------------------------------
+  # new method: sprite
+  #--------------------------------------------------------------------------
+  #def sprite
+  #  index = $game_party.battle_members.index(self)
+  #  return SceneManager.scene.spriteset.actor_sprites[index]
+  #end
+end
+
+
+module TH
+  module State_battlers
+    
+    # state ID, battler name, battler hue
+    Regex = /<state battler:\s*(\d+)\s*(\w+)\s*(\d+)>/i
+    Regex2 = /<actor battler:\s*(\w+)\s*(\d+)>/i
+  end
+end
+
+module RPG
+  class BaseItem
+    def actor_battler
+      bob = ["", 0]
+      res =  self.note.match(TH::State_battlers::Regex2)
+      if res 
+        bob[0] = res[1].to_s
+        bob[1] = res[2].to_i
+      end
+      return bob
+    end
+    
+    def state_battlers
+      return @state_battlers unless @state_battlers.nil?
+      load_notetag_state_battlers
+      return @state_battlers
+    end
+    
+    def state_battler_list
+      return @state_battler_list unless @state_battler_list.nil?
+      load_notetag_state_battlers
+      return @state_battler_list
+    end
+    
+    def load_notetag_state_battlers
+      @state_battlers = {}
+      res = self.note.scan(TH::State_battlers::Regex)      
+      unless res.empty?
+        res.each do |(state_id, battler_name, battler_hue)|
+          @state_battlers[state_id.to_i] = [battler_name, battler_hue.to_i]
+        end
+      end
+      @state_battler_list = @state_battlers.keys
+    end
+  end
+end
+
+class Game_Battler
+  
+  def battler_name
+    @state_enemy_battler = nil
+    bob = (actor? ? actor : enemy)
+    name = states.detect {|state| bob.state_battler_list.include?(state.id)}
+    if name
+      @state_enemy_battler = name
+      return bob.state_battlers[@state_enemy_battler.id][0]
+    else
+      return battler_default
+    end
+  end
+  
+  def battler_default
+    @battler_name
+  end
+  
+  
+  def battler_hue
+    if @state_enemy_battler
+      bob = (actor? ? actor : enemy)
+      return bob.state_battlers[@state_enemy_battler.id][1]
+    else
+      return battler_hue_default
+    end
+  end
+  
+  def battler_hue_default
+    @battler_hue
+  end
+    
+end
+
+
+class Game_Actor < Game_Battler
+  def battler_default
+    actor.actor_battler[0]
+  end
+  def battler_hue_default
+    actor.actor_battler[1]
+  end
+end

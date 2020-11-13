@@ -1,0 +1,324 @@
+#--------------------------------#
+# Dramatic Lightning Co Presents:
+# Face Time 2.2
+#--------------------------------#
+# Your Battlers will have a random face in battle!
+# This is a complicated script, so first, you need
+# a "face" folder in your Battlers folder and a few "face#" pictures in there.
+#--------------------------------#
+# You place any of these notetags on the enemy:
+#<DLFaceBase string> - Choose the default face or else your enemy has a blank face.
+#<DLFaceExtra zoomx zoomy +-angle half> - Adjusts zoom on a 100 scales and the tilt of the face.
+#Half slices up the face, 1/2 top/bottom, 3/4 left/right, and 5/6 eyes only.
+#--------------------------------#
+
+module DL
+  module Face_Replace
+    
+    FaceFolder = "face"
+    Regex = /<DLFace:\s*([+-]\d+)\s*(\w+)\s*([+-]\d+)\s*([+-]\d+)\s*>/i
+    Regex3 = /<DLFaceExtra:\s*([+-]\d+)\s*(\d+)\s+(\d+)\s+([+-]\d+)\s+(\d+)\s*>/i
+    
+  end
+
+end
+
+module RPG
+  class BaseItem
+    def face_keep
+      res = self.note.match(/<DLFaceKeep>/i)
+      return res
+    end
+    
+    def face_replace
+      return @face_replace unless @face_replace.nil?
+      load_notetag_face_replace
+      return @face_replace
+    end
+    
+    def load_notetag_face_replace
+      @face_replace = []
+      bob = []
+      bob2 = []
+      res = self.note.scan(DL::Face_Replace::Regex3)      
+      unless res.empty?
+        res.each do |(face_layer, face_zoomx, face_zoomy, face_angle, face_split)|
+          front_back = face_layer.to_i >= 0 ? 0 : 100
+          sam = (face_split.to_i % 2 == 0 ? false : true) #flip if even
+          sam2 = (face_split.to_i / 2) % 4
+          bob2[face_layer.to_i.abs + front_back] = [face_zoomx.to_f / 100.0, face_zoomy.to_f / 100.0, face_angle.to_i, sam, sam2]
+        end
+      end
+      
+      res = self.note.scan(DL::Face_Replace::Regex) 
+      unless res.empty?
+        res.each do |(face_layer, face_base, face_x, face_y)|
+          front_back = face_layer.to_i >= 0 ? 0 : 100
+          @face_replace[face_layer.to_i.abs + front_back] = [face_base.to_s, face_x.to_i, face_y.to_i]
+          @face_replace[face_layer.to_i.abs + front_back] += bob2[face_layer.to_i.abs + front_back] == nil ? [1.0,1.0,0,false, 0] : bob2[face_layer.to_i.abs + front_back]
+          @face_replace[face_layer.to_i.abs + front_back] += [face_layer.to_i]
+        end
+      end
+      @face_replace = @face_replace.compact
+      # face_base, face_x, face_y, face_zoomx, face_zoomy, face_angle, face_flip, part_hue, layer_order 
+      # 0            1        2         3        4             5         6           7            8              
+    end
+  end
+end
+
+###########################################################################
+class Game_Actor < Game_Battler
+
+  def face_replace
+    return []
+  end
+  def face_keep
+    return false
+  end
+end
+
+class Game_Party < Game_Unit
+
+  def face_toggle
+    @face_toggle
+  end
+
+  def face_removal(face_layer, layer_removal = true)
+    @face_toggle = [] if @face_toggle == nil
+    if layer_removal
+      @face_toggle << face_layer if !@face_toggle.include? face_layer
+    else
+      @face_toggle.delete(face_layer)
+    end
+  end
+
+end
+
+class Game_Enemy < Game_Battler
+
+  alias :dl_face_replace_initialize :initialize
+  def initialize(index, enemy_id)
+    dl_face_replace_initialize(index, enemy_id)
+    face_setup(enemy_id)
+  end
+  
+  def face_setup(enemy_id)
+    @face_replace = enemy.face_replace
+    bob = DL::Face_Replace::FaceFolder + "/"
+    bob = "" if DL::Face_Replace::FaceFolder == "" or DL::Face_Replace::FaceFolder == nil
+    unless @face_replace.empty?
+      @face_replace.size.times do |i|
+        next if @face_replace[i] == nil
+                
+        bobby = Dir.glob("Graphics/Battlers/" + bob + @face_replace[i][0] + "*")
+
+        
+        if !bobby.empty?
+          @face_replace[i][9] = bobby
+        else
+          @face_replace[i][9] = []
+        end
+      end
+    end
+  end
+  
+  def face_replace
+    @face_replace
+  end
+  
+  def face_keep
+    enemy.face_keep
+  end
+  
+end
+
+#==============================================================================
+# ** Sprite_Battler
+#------------------------------------------------------------------------------
+#  This sprite is used to display battlers. It observes an instance of the
+# Game_Battler class and automatically changes sprite states.
+#==============================================================================
+
+class Sprite_Battler < Sprite_Base
+  #--------------------------------------------------------------------------
+  # * Public Instance Variables
+  #--------------------------------------------------------------------------
+  attr_accessor :battler
+  #--------------------------------------------------------------------------
+  # * Object Initialization
+  #--------------------------------------------------------------------------
+  
+  alias :dl_face_replace_initialize :initialize
+  def initialize(viewport, battler = nil)
+    dl_face_replace_initialize(viewport, battler)
+    @face_map = []
+    @newface = []
+    @newhue = []
+    if battler and battler.enemy?
+      rand_part_hue = rand(360)
+      battler.face_replace.size.times do |i|
+        next if battler.face_replace[i] == nil
+        sammy = battler.face_replace[i][9]
+        if $game_party.face_toggle and battler.face_replace[i][9] != nil and !battler.face_keep
+          $game_party.face_toggle.each do |layer_order|
+            sammy.size.times do |j|
+              sammy[j] = "axesdexsedse" if sammy[j].include? layer_order
+             end
+            #@newface[i] = "" if @newface[i] != "" and @newface[i].include? layer_order  
+          end
+        end
+        sammy.delete("axesdexsedse")
+        @newface[i] = sammy.empty? ? "" :  sammy.sample.sub("Graphics/Battlers/","")
+        case battler.face_replace[i][7]
+        when 1
+          @newhue[i] = 0
+        when 2
+          @newhue[i] = rand_part_hue
+        when 3
+          @newhue[i] = rand(360)
+        else
+          @newhue[i] = battler.battler_hue
+        end
+        @face_map[i] = Sprite.new(viewport)
+      end 
+    end
+ 
+  end
+  
+  #--------------------------------------------------------------------------
+  # * Free
+  #--------------------------------------------------------------------------
+  alias :dl_face_replace_dispose :dispose
+  def dispose
+    @face_map.size.times do |i|
+      next if @face_map[i] == nil
+      @face_map[i].dispose
+    end
+    dl_face_replace_dispose
+  end
+  #--------------------------------------------------------------------------
+  # * Update Transfer Origin Bitmap
+  #--------------------------------------------------------------------------
+  alias :dl_face_replace_update_bitmap :update_bitmap
+  def update_bitmap
+    dl_face_replace_update_bitmap
+    unless @face_map.empty?
+      @face_map.size.times do |i|
+        next if @face_map[i] == nil
+        new_facemap = Cache.battler(@newface[i], @newhue[i])#((@newface[i].to_s.include? "uniq")? 0 : @battler.battler_hue))
+        if @face_map[i].bitmap != new_facemap
+          @face_map[i].bitmap = new_facemap
+          @battler_visible = @battler.alive?
+          @face_map[i].opacity = 0 unless @battler_visible
+        end
+      end
+    end
+  end
+
+  #--------------------------------------------------------------------------
+  # * Update Origin
+  #--------------------------------------------------------------------------
+  alias :dl_face_replace_update_origin :update_origin
+  def update_origin
+    dl_face_replace_update_origin
+    unless @face_map.empty?
+      @face_map.size.times do |i|
+        next if @face_map[i] == nil
+        @face_map[i].ox = (@face_map[i].width / 2)
+        @face_map[i].oy = (@face_map[i].height / 2)
+      end 
+    end
+    
+  end
+  #--------------------------------------------------------------------------
+  # * Update Position
+  #--------------------------------------------------------------------------
+  alias :dl_face_replace_update_position :update_position
+  def update_position
+    dl_face_replace_update_position
+    self.z = @battler.screen_z + self.y# unless @face_map.empty?
+    unless @face_map.empty?
+      @face_map.size.times do |i|
+        next if @face_map[i] == nil
+        @face_map[i].x = (self.x + @battler.face_replace[i][1])
+        @face_map[i].y = (self.y - (self.oy / 2) + @battler.face_replace[i][2]) 
+        @face_map[i].z = self.z + @battler.face_replace[i][8]
+        
+        @face_map[i].zoom_x = @battler.face_replace[i][3]
+        @face_map[i].zoom_y = @battler.face_replace[i][4] 
+        @face_map[i].angle = @battler.face_replace[i][5]  
+        @face_map[i].mirror = @battler.face_replace[i][6] 
+    
+      end
+    end 
+  
+  end
+  #--------------------------------------------------------------------------
+  # * Revert to Normal Settings
+  #--------------------------------------------------------------------------
+  alias :dl_face_replace_revert_to_normal :revert_to_normal
+  def revert_to_normal
+    dl_face_replace_revert_to_normal
+    unless @face_map.empty?
+      @face_map.size.times do |i|
+        next if @face_map[i] == nil
+        @face_map[i].blend_type = self.blend_type
+        @face_map[i].color = self.color
+        @face_map[i].opacity = self.opacity 
+        @face_map[i].ox = @face_map[i].width / 2
+        if @battler.enemy? and @battler.face_replace[i][6] == 2
+          @face_map[i].src_rect.y = @face_map[i].bitmap.height * (2.0/3.0) if @face_map[i].bitmap
+        else
+          @face_map[i].src_rect.y = 0
+        end
+      end
+    end
+  end
+  
+  alias :dl_face_replace_update_effect :update_effect
+  def update_effect
+    dl_face_replace_update_effect
+    unless @face_map.empty?
+       @face_map.size.times do |i|
+        next if @face_map[i] == nil
+        @face_map[i].color = self.color
+        @face_map[i].color.alpha= self.color.alpha
+        @face_map[i].opacity = self.opacity 
+        @face_map[i].blend_type = self.blend_type
+        @face_map[i].ox = @face_map[i].width / 2
+        if @battler.enemy? and@battler.face_replace[i][6] == 2
+          @face_map[i].src_rect.y = (@face_map[i].bitmap.height * (2.0/3.0)) + self.src_rect.y   if @face_map[i].bitmap
+        else
+          @face_map[i].src_rect.y = self.src_rect.y 
+        end
+        @face_map[i].update
+      end
+    end
+  end
+
+  def animation_process_timing(timing)
+    timing.se.play unless @ani_duplicated
+    case timing.flash_scope
+    when 1
+      self.flash(timing.flash_color, timing.flash_duration * @ani_rate)
+        unless @face_map.empty?
+         @face_map.size.times do |i|
+          next if @face_map[i] == nil
+          @face_map[i].flash(timing.flash_color, timing.flash_duration * @ani_rate)
+        end
+      end
+    when 2
+      if viewport && !@ani_duplicated
+        viewport.flash(timing.flash_color, timing.flash_duration * @ani_rate)
+      end
+    when 3
+      self.flash(nil, timing.flash_duration * @ani_rate)
+      unless @face_map.empty?
+         @face_map.size.times do |i|
+          next if @face_map[i] == nil
+          @face_map[i].flash(nil, timing.flash_duration * @ani_rate)
+        end
+      end      
+    end
+  end
+end

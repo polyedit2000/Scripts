@@ -1,0 +1,55 @@
+#--------------------------------#
+# Dramatic Lightning Co Presents:
+# Race
+#--------------------------------#
+# You can give things plenty of race traits.
+#--------------------------------#
+# Use <Race: str> to specify almost anything
+# with a racial like beast.
+# Use .race?("beast") on a battler to check if they have that race.
+# Use .add_race("beast") on a battler if you want to permanently add
+# that race to them.
+#--------------------------------#
+
+
+class RPG::BaseItem
+  def race
+    bob = ""
+    res = self.note.match(/<Race:\s*(\w+)\s*>/i)
+    bob = res[1].to_s if res
+    return bob
+  end
+end
+
+class Game_Battler < Game_BattlerBase
+
+  def race
+    @new_race = "" if @new_race == nil
+    bob = @new_race
+    @states.each do |i|
+      bob += $data_states[i].race
+    end
+    if actor?
+      weapons.each do |weapon|
+        bob +=  weapon.race
+      end
+      armors.each do |armor|
+        bob +=  armor.race
+      end
+      bob += actor.race
+      bob += self.class.race
+    else
+      bob += enemy.race
+    end
+
+    return bob
+  end
+  
+  def race?(species)
+    race.include?(species)
+  end
+  def add_race(species)
+    @new_race = "" if @new_race == nil
+    @new_race += species.to_s
+  end
+end

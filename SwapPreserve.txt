@@ -1,0 +1,63 @@
+#--------------------------------#
+# Dramatic Lightning Co Presents:
+# Party As Is
+#--------------------------------#
+# When you change your party formation by default,
+# your characters swap positions.
+# This script makes the swap more "natural".
+#--------------------------------#
+# This script is plug and play.
+#--------------------------------#
+
+
+class Game_Character < Game_CharacterBase
+  
+   def set_new_footing(char, limiter = false)
+      @real_x = char.real_x
+      @real_y = char.real_y
+      @x = char.x
+      @y = char.y
+      @direction = char.direction
+    return if limiter == true
+    #@tile_id = char.tile_id
+    #@move_speed = char.move_speed
+    #@move_frequency = char.move_frequency
+    @walk_anime = char.walk_anime
+    @step_anime = char.step_anime
+    @direction_fix = char.direction_fix
+    #@opacity = char.opacity
+    #@blend_type = char.blend_type
+    @pattern = char.pattern
+    #@priority_type = char.priority_type
+    @bush_depth = char.bush_depth
+    @animation_id = char.animation_id
+    @balloon_id = char.balloon_id
+    #@transparent = char.transparent
+  end
+  
+end
+
+
+class Game_Party < Game_Unit
+  
+  def swap_order(index1, index2)
+    bob = []
+    bob[0] = $game_player.clone
+    i = 0
+     $game_player.followers.each do |follower|
+       i+= 1
+       bob[i] = follower.clone
+     end
+
+    @actors[index1], @actors[index2] = @actors[index2], @actors[index1]
+    bob[index2], bob[index1] = bob[index1], bob[index2]
+    $game_player.refresh
+    
+    $game_player.set_new_footing(bob[0])
+    i = 0
+    $game_player.followers.each do |follower|
+      i += 1
+      follower.set_new_footing(bob[i])
+    end
+  end
+end

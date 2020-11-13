@@ -1,0 +1,55 @@
+#--------------------------------#
+# Dramatic Lightning Co Presents:
+# Fake Enemy
+#--------------------------------#
+# You can use this script to get goods from enemies on the map.
+#--------------------------------#
+# Use a Script Call of $game_party.exp_fake(enemy_id, message)
+# If using the id alone, the default message is used instead.
+#--------------------------------#
+
+module Vocab
+  FoeDefeated = "%s was defeated!"
+end
+
+class Game_Party < Game_Unit
+  def exp_fake(eid, vicmessage = "")
+    enemy = $data_enemies[eid] 
+    expe = (enemy.exp).to_i
+    golde = (enemy.gold * ($game_party.gold_double? ? 2 : 1)).to_i
+    iteme = [] 
+    enemy.drop_items.inject([]) do |r, di|
+      if di.kind > 0 && rand * di.denominator < ($game_party.drop_item_double? ? 2 : 1)
+        iteme.push(item_object(di.kind, di.data_id))
+      else
+        iteme
+      end
+    end
+          
+    $game_message.new_page
+    if vicmessage == ""
+      $game_message.add(sprintf(Vocab::FoeDefeated, enemy.name))
+    else
+      $game_message.add(sprintf(vicmessage.to_s))
+    end
+    $game_message.add('\.' + sprintf(Vocab::ObtainExp, expe)) if expe > 0
+    $game_message.add('\.' + sprintf(Vocab::ObtainGold, golde)) if golde > 0
+    iteme.each do |item|
+      $game_party.gain_item(item, 1)
+      $game_message.add(sprintf(Vocab::ObtainItem, item.name))
+    end
+    $game_party.members.each do |member|
+      member.gain_exp(expe)
+    end 
+    $game_party.gain_gold(golde)
+
+    
+  end
+  
+  def item_object(kind, data_id)
+    return $data_items  [data_id] if kind == 1
+    return $data_weapons[data_id] if kind == 2
+    return $data_armors [data_id] if kind == 3
+    return nil
+  end
+end

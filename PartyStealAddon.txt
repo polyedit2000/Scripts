@@ -1,0 +1,36 @@
+class Window_MenuStatus < Window_Selectable
+  def draw_all_items
+    item_max.times {|i| draw_item(i) }
+    $game_party.owned.each_index do |i|
+      a = $game_party.owned[i]
+      next if a == nil
+      draw_captive(item_max + i, a[2], a[0] == $game_map.map_id)
+    end
+  end
+  def draw_captive(index, captive, here)
+    actor = $game_actors[captive]
+    rect = item_rect(index)
+    draw_item_background(index)
+    draw_actor_face(actor, rect.x + 1, rect.y + 1, false)
+    if here
+      change_color(crisis_color)
+      draw_text(rect.x + 1, rect.y + 1, 128, 96, " Close...")
+    else
+      change_color(knockout_color)
+      draw_text(rect.x + 1, rect.y + 1, 128, 96, " Missing")
+    end
+    draw_actor_simple_status(actor, rect.x + 108, rect.y + line_height / 2)
+  end
+   def draw_item(index)
+    actor = $game_party.members[index]
+    enabled = $game_party.battle_members.include?(actor)
+    enabled = false if $game_player.captured[0] > 1
+    rect = item_rect(index)
+    draw_item_background(index)
+    draw_actor_face(actor, rect.x + 1, rect.y + 1, enabled)
+    change_color(crisis_color)
+    draw_text(rect.x + 1, rect.y + 1, 128, 96, " Trapped!") if $game_player.captured[0] > 1
+    draw_actor_simple_status(actor, rect.x + 108, rect.y + line_height / 2)
+  end
+end
+

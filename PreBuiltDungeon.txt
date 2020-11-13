@@ -1,0 +1,356 @@
+#--------------------------------#
+# Dramatic Lightning Co Presents:
+# Prebuilt Dungeon Builder
+#--------------------------------#
+# This script lets you build a randomized dungeon
+# using maps you designed.  You will need to set
+# aside Switches 1-9 plus 3 varaiables (Default: 1-3)
+#--------------------------------#
+#
+# You have to set up a few things first.
+# Under def map_rotation, add an array of map indexes
+# under each call number.  Call Number 1000 is used
+# for maps used for this script that isn't put in 
+# the array (like a "second floor" to an inn room).
+#--------------------------------#
+# In your Map Noteboxes, you have <North: x y>
+# when your character comes from the north, so mark
+# a location near your northern exit.
+# The same applies for East, West and South.
+# You also have a <Warp: x y> if your character is
+# teleporting from outside the dungeon.
+#--------------------------------#
+# Also, you can mark some maps with <DunExclude: str>
+# specifying 2468 for the direction you can't wrap to/from.
+# <DunFunnel: str> will make the map only exit from the
+# specified directions.
+#--------------------------------#
+# <OneTimeDungeon> can be tagged in the map so that
+# said map only appears once in the current rotation.
+# It can also be placed in an event's Comment so that
+# the event isn't reset if you restart the dungeon.
+#--------------------------------#
+#
+# So let's talk about making the dungeon. In your script call,
+# $game_map.build_the_dungeon(length, call_number)
+# will compile the dungeon data and call_number calls that map array
+# you specified under map_rotation.
+# length can either be a number for how many floors there are
+# or an array of [0,0,0] of any length, 0 for a random map and
+# a number for a specific map.
+#--------------------------------#
+# You can use $game_map.enter_dungeon to enter the first map of your dungeon.
+# There's also $game_map.enter_dungeon(n, d), n entering a specific index
+# or you can use the variable you put for MapOrder, and is the direction you
+# want to enter from.
+#--------------------------------#
+#
+# Before I forget, your dungeon maps can be linked to one another using
+# $game_map.dungeon_port(d) of directions 2468, so going north (2)
+# brings you to the next map at the south entrance.
+#--------------------------------#
+# Switches 1 to 9 are direction-based:
+# 2,4,6,8 if they are not the active directions so they can be placed near their relative exits.
+# 1,3,7,9 if neighboring directions are active, so if 2 (south) and 4 (west) are on, 1 will activate forcing you to go the long way.
+# 5 is activated opposite directions are active, so north/south or east/west.
+#--------------------------------#
+# Switch 10 is on at the start of the dungeon.
+# Switch 11 is on at the end of the dungeon.
+#--------------------------------#
+
+module DL
+  module DUN
+    #Variables
+    MapArray = 1
+    ForwardArray = 2
+    MapOrder = 3
+      
+    ###############
+    #Switches 1-9: Directional
+    #Switches 10: Beginning
+    #Switches 11: End
+  end
+end
+
+class RPG::Map
+  
+   def compass_load(dir)
+    bob = [8,6]
+    res = nil
+    res = self.note.match(/<Warp:\s*(\d+)\s*(\d+)\s*>/i) if dir == 0
+    res = self.note.match(/<North:\s*(\d+)\s*(\d+)\s*>/i) if dir == 2
+    res = self.note.match(/<West:\s*(\d+)\s*(\d+)\s*>/i) if dir == 4
+    res = self.note.match(/<East:\s*(\d+)\s*(\d+)\s*>/i) if dir == 6
+    res = self.note.match(/<South:\s*(\d+)\s*(\d+)\s*>/i) if dir == 8
+    if res
+      bob[0] = res[1].to_i
+      bob[1] = res[2].to_i
+    end
+    return bob
+  end  
+  def exit_exclude
+    bob = []
+    res = self.note.match(/<DunExclude:\s*(\d+)\s*>/i)
+    if res
+      bobby = res[1].to_s
+      bob << 2.to_i if bobby.include?("2")
+      bob << 4.to_i if bobby.include?("4")
+      bob << 6.to_i if bobby.include?("6")
+      bob << 8.to_i if bobby.include?("8")
+    end
+    return bob
+  end  
+  def exit_funnel
+    bob = []
+    res = self.note.match(/<DunFunnel:\s*(\d+)\s*>/i)
+    if res
+      bobby = res[1].to_s
+      bob << 2.to_i if bobby.include?("2")
+      bob << 4.to_i if bobby.include?("4")
+      bob << 6.to_i if bobby.include?("6")
+      bob << 8.to_i if bobby.include?("8")
+    end
+    return bob
+  end  
+  def one_time_dungeon
+    res = self.note.match(/<OneTimeDungeon>/i)
+    return res
+  end  
+  
+end
+
+module RPG
+  class Event::Page
+
+    def one_time_dungeon
+      @list.each {|cmd|
+        if cmd.code == 108 && res = cmd.parameters[0].match(/<OneTimeDungeon>/i)
+          return true
+        end
+      }
+      return false
+    end
+  end
+end
+
+class Game_Map
+  include DL::DUN
+  
+    def map_rotation(atmosphere, whole = false)
+      bob = [3,4,5,6] 
+      case atmosphere
+      when 0
+        bob = [3,4,5,6]
+      when 1
+        bob = [3,4,5]
+      when 2
+        bob = [3,6]
+      when 3
+        bob = [8]
+      when 1000 #special for side-area cleaning
+        bob = [9]
+      end
+      return whole ? bob : bob.sample
+      return
+    end
+  
+  def clean_map
+    return unless $game_variables[MapArray].is_a?(Array)
+    sam = $game_variables[MapArray]
+    sam += map_rotation(1000, true)
+    sam.each do |mid|
+      bob = load_data(sprintf("Data/Map%03d.rvdata2", mid))
+      bob.events.each do |id, ev|
+        next if ev.pages[0] and ev.pages[0].one_time_dungeon
+        # assumes there are only 4. Bad assumption. Assumes "OFF" is the default state.
+        $game_self_switches[[mid, id, "A"]] = false
+        $game_self_switches[[mid, id, "B"]] = false
+        $game_self_switches[[mid, id, "C"]] = false
+        $game_self_switches[[mid, id, "D"]] = false
+      end
+    end
+    $game_variables[MapOrder] = 0
+  end
+  
+  def enter_dungeon(zone = 0, d = 0)
+    #entering a random dungeon from the outside.
+    return unless $game_variables[MapArray].is_a?(Array)
+    return unless $game_variables[ForwardArray].is_a?(Array)
+    $game_variables[MapOrder] = zone
+    dmap_id = $game_variables[MapArray][$game_variables[MapOrder]]
+    #load directional coordinates
+    bob =  load_data(sprintf("Data/Map%03d.rvdata2", dmap_id))
+    bobby = bob.compass_load(d)
+    dx = bobby[0]
+    dy = bobby[1]
+    d = 2 if d == 0
+    $game_player.reserve_transfer(dmap_id, dx, dy, d)
+    $game_temp.fade_type = 0
+    #    dir_switches
+  end
+  
+  def dungeon_port(d)  #Directional Teleport
+    return unless $game_variables[MapArray].is_a?(Array)
+    return unless $game_variables[ForwardArray].is_a?(Array)
+    #Assuming current map
+    if $game_variables[ForwardArray][$game_variables[MapOrder]] == 10 - d 
+      #old direction is south
+      $game_variables[MapOrder] -= 1
+    elsif $game_variables[ForwardArray][$game_variables[MapOrder] + 1] == d
+      #new direction is north
+      $game_variables[MapOrder] += 1
+    else
+      #no teleport
+      return
+    end
+
+    #get new map data
+    dmap_id = $game_variables[MapArray][$game_variables[MapOrder]]
+    #load directional coordinates
+    bob =  load_data(sprintf("Data/Map%03d.rvdata2", dmap_id)).compass_load(d)
+    #bobby = bob.compass_load(d)
+    dx = bob[0]
+    dy = bob[1]
+    d = 2 if d == 0
+    $game_player.reserve_transfer(dmap_id, dx, dy, d)
+    $game_temp.fade_type = 0
+    #    dir_switches
+  end
+  
+  def build_the_dungeon(dungeon_set, atmosphere = 0)
+    $game_variables[MapArray] = []
+    $game_variables[ForwardArray] = []
+    dungeon_array = []
+    if dungeon_set.is_a?(Array) #generate with presets [7,0,0,8,0,0,9]
+      dungeon_array = dungeon_set
+    else 
+      dungeon_set.times.each do |i|
+        dungeon_array[i] = 0
+      end
+    end
+    return if dungeon_array.empty?
+    
+
+    dungeon_array.size.times do |i|
+      if i == 0 #first map
+        # map has not previous warp and heads north
+        dungeon_array[i] = determine_map(atmosphere, 0, dungeon_array[i], dungeon_array[i+1],i)
+        $game_variables[ForwardArray][i] = 0
+        $game_variables[ForwardArray][i + 1] = 0 if dungeon_array.size  == 1
+      elsif i == dungeon_array.size - 1 #last map
+        #map has no future warps
+        dungeon_array[i] = determine_map(atmosphere, $game_variables[ForwardArray][i], dungeon_array[i],-1,i)
+        $game_variables[ForwardArray][i + 1] = 0
+      else
+        dungeon_array[i] = determine_map(atmosphere, $game_variables[ForwardArray][i], dungeon_array[i],dungeon_array[i+1],i)
+      end
+      $game_variables[MapArray] = dungeon_array
+    end
+    #once we finish with creating array, finalize
+    $game_variables[MapArray] = dungeon_array
+    clean_map
+  end
+  
+  def determine_map(atmosphere, backward, curr, nextzone, i)
+    backward = 10 - backward # if previous map reads north, this map is south
+    t = 0
+    while t < 100 do
+      if curr > 0
+        cool = curr
+      else
+        cool = map_rotation(atmosphere)
+      end
+      bmap = load_data(sprintf("Data/Map%03d.rvdata2", cool))
+      next if bmap.one_time_dungeon and $game_variables[MapArray].include?(cool)
+      bob = [2,4,6,8]
+      bob -= bmap.exit_exclude #a NS hall removes EW
+      if bob.include?(backward) or backward % 10 == 0 #bob must connect to south or start
+        if !bmap.exit_funnel.empty?
+          next if bmap.exit_funnel.include?(backward)
+          bob = bmap.exit_funnel
+        end
+        bob -= [backward]
+        if nextzone == -1 # If last map, no need for specifics
+          return cool
+        elsif nextzone == 0 #if next map empty, setup next direction
+          
+          if  i == 0
+            if bob.include?(8)
+              $game_variables[ForwardArray][i + 1] = 8
+              return cool 
+            end
+            if curr > 0
+              $game_variables[ForwardArray][i + 1] = bob.sample
+              return cool
+            end
+          else
+            $game_variables[ForwardArray][i + 1] = bob.sample
+            return cool
+          end
+          
+        else #if next map has id...
+          
+          amap = load_data(sprintf("Data/Map%03d.rvdata2", nextzone))
+          bobby = [2,4,6,8] #current map
+          bobby = bmap.exit_funnel if !bmap.exit_funnel.empty? #funnel exit alt
+          if !amap.exit_funnel.empty?
+            bobby -= amap.exit_funnel.map{|a| 10 - a} #cannot go south if next map goes north
+          end
+          bobby -= amap.exit_exclude{|a| 10 - a} #cannot go south if north is missing
+          
+          if i == 0
+            if bobby.include?(2) 
+              if bob.include?(8)
+                bob = [8]
+              elsif curr == 0
+                next
+              end
+            end
+          end
+          bob2 = 10 - bob.sample #assuming north, we check new south
+          if bobby.include?(bob2) #if hall can arrive from south
+            $game_variables[ForwardArray][i + 1] = 10 - bob2
+            return cool
+          end
+        end
+        next
+      else
+        next
+      end
+    end
+  end
+  
+end
+
+class Scene_Map < Scene_Base
+    include DL::DUN
+  alias :dl_dungeon_post_transfer :post_transfer
+  def post_transfer
+    dir_switches
+    dl_dungeon_post_transfer
+  end
+  
+  def dir_switches
+   return unless $game_variables[ForwardArray].is_a?(Array)
+   11.times.each do |i|
+     $game_switches[i + 1] = false
+   end
+   bob = [2,4,6,8]
+   bob -= [10 - $game_variables[ForwardArray][$game_variables[MapOrder]]]
+   bob -= [$game_variables[ForwardArray][$game_variables[MapOrder] + 1]]
+   #bob -= load_data(sprintf("Data/Map%03d.rvdata2",  $game_variables[MapArray][$game_variables[MapOrder]])).exit_exclude
+
+   $game_switches[2] = true if bob.include?(2)
+   $game_switches[4] = true if bob.include?(4)
+   $game_switches[6] = true if bob.include?(6)
+   $game_switches[8] = true if bob.include?(8)
+   $game_switches[1] = true if ($game_switches[2] == false and $game_switches[4] == false )
+   $game_switches[3] = true if ($game_switches[2]  == false  and $game_switches[6] == false )
+   $game_switches[5] = true if ($game_switches[2] and $game_switches[8]) or ($game_switches[4] and $game_switches[6])
+   $game_switches[7] = true if ($game_switches[4]  == false  and $game_switches[8] == false )
+   $game_switches[9] = true if ($game_switches[6]  == false  and $game_switches[8] == false )
+   $game_switches[10] = true if $game_variables[MapOrder] == 0
+   $game_switches[11] = true if $game_variables[MapOrder] == $game_variables[MapArray].size - 1
+
+  end
+end

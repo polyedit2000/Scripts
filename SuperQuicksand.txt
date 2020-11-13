@@ -1,0 +1,502 @@
+#===============================================================================
+# )----------------------------------------------------------------------------(
+# )--     AUTHOR:     Mr Trivel                                              --(
+# )--     NAME:       Quicksand                                              --(
+# )--     CREATED:    2014-10-27                                             --(
+# )--     VERSION:    1.2                                                    --(
+#===============================================================================
+# )--                         VERSION HISTORY                                --(
+# )--  1.0 - Initial script.                                                 --(
+# )--  1.1 - Player is slowed down while in quicksand.                       --(
+# )--  1.2 - Multiple quicksand tiles.                                       --(
+#===============================================================================
+# )--                          DESCRIPTION                                   --(
+# )--  Allows the developer to set which Terrain Tags are quicksand.         --(
+# )--  Player will start sinking in quicksand. If DEATH option is set to true--(
+# )--  player will get a game over screen after sinking completely. Or, if   --(
+# )--  it's false, player will sink to a specific amount.                    --(
+# )--                                                                        --(
+# )--  Bonus: Best effect reached when quicksand tiles have Bush option.     --(
+#===============================================================================
+# )--                          INSTRUCTIONS                                  --(
+# )--  Customize value in Quicksand module. And play.                        --(
+#===============================================================================
+# )--                          LICENSE INFO                                  --(
+# )--  Free for non-commercial & commercial games if credit was given to     --(
+# )--  Mr Trivel.                                                            --(
+# )----------------------------------------------------------------------------(
+#===============================================================================
+
+# )=======---------------------------------------------------------------------(
+# )-- Module: Quicksand                                                      --(
+# )---------------------------------------------------------------------=======(
+module Quicksand
+  
+  Event_MaxSink = 32
+  
+  Quicksands = {
+    # Quicksand
+    2 => {  :sinking_speed => 0.1,  # Sinking Speed in pixels per frame
+            :slow_down => 0.05,     # Movement slow-down by %
+            :max_slow_down => 0.5,  # Max slowdown in %
+            :death => false,         # Death after sinking?
+            :death_sink => 32,      # Pixels for death, VX Ace default is 32px
+            :max_sink => 30,        # Max sink possible
+            :dash => true        # Can dash in quicksand?
+         },
+             # Snow
+    3 => {  :sinking_speed => 0.05,  # Sinking Speed in pixels per frame
+            :slow_down => 0.05,     # Movement slow-down by %
+            :max_slow_down => 0.5,  # Max slowdown in %
+            :death => true,         # Death after sinking?
+            :death_sink => 32,      # Pixels for death, VX Ace default is 32px
+            :max_sink => 32,        # Max sink possible
+            :dash => true         # Can dash in quicksand?
+         },
+    4 => {  :sinking_speed => 0.1,  # Sinking Speed in pixels per frame
+            :slow_down => 0.05,     # Movement slow-down by %
+            :max_slow_down => 0.5,  # Max slowdown in %
+            :death => false,         # Death after sinking?
+            :death_sink => 32,      # Pixels for death, VX Ace default is 32px
+            :max_sink => 30,        # Max sink possible
+            :dash => true       # Can dash in quicksand?
+         },
+             # Snow
+
+    # Snow
+    5 => {  :sinking_speed => 0.1,
+            :slow_down => 0.04,
+            :max_slow_down => 0.5,
+            :death => false,
+            :death_sink => 32,
+            :max_sink => "$game_switches[19] ? 4 : 30", # if party has item 1, make max sink 4, else it's 8
+            :dash => true
+         }
+    
+  }
+end
+
+# )=======---------------------------------------------------------------------(
+# )-- Class: Game_Player                                                     --(
+# )---------------------------------------------------------------------=======(
+class Game_Character < Game_CharacterBase
+  
+  include Quicksand
+  # )--------------------------------------------------------------------------(
+  # )--  Aliased methods                                                     --(
+  # )--------------------------------------------------------------------------(
+
+
+
+
+
+  
+  # )--------------------------------------------------------------------------(
+  # )--  Public Instance Variables                                           --(
+  # )--------------------------------------------------------------------------(
+  attr_accessor :sunk
+  
+  # )--------------------------------------------------------------------------(
+  # )--  Alias: initialize                                                   --(
+  # )--------------------------------------------------------------------------(
+
+    alias :mrts_qcksnd_initialize :initialize
+  def initialize
+    mrts_qcksnd_initialize
+    @sunk = 0.0
+  end
+  
+  def quicksand_tag
+    return terrain_tag if terrain_tag > 1
+    #return region_id if region_id > 0
+    return 0
+  end
+  
+  # )--------------------------------------------------------------------------(
+  # )--  New Method: in_quicksand?                                           --(
+  # )--------------------------------------------------------------------------(
+  def in_quicksand?
+    Quicksands[quicksand_tag]
+  end
+  
+  # )--------------------------------------------------------------------------(
+  # )--  New Method: qcks_can_dash?                                          --(
+  # )--------------------------------------------------------------------------(
+  def qcks_can_dash?
+    Quicksands[quicksand_tag][:dash]
+  end
+  
+  # )--------------------------------------------------------------------------(
+  # )--  New Method: qcks_sink_speed                                         --(
+  # )--------------------------------------------------------------------------(
+  def qcks_sink_speed
+    Quicksands[quicksand_tag][:sinking_speed]
+  end
+  
+  # )--------------------------------------------------------------------------(
+  # )--  New Method: qcks_max_sink                                           --(
+  # )--------------------------------------------------------------------------(
+  def qcks_max_sink
+    Quicksands[quicksand_tag][:max_sink]
+  end
+  
+  # )--------------------------------------------------------------------------(
+  # )--  New Method: qcks_death_sink                                         --(
+  # )--------------------------------------------------------------------------(
+  def qcks_death_sink
+    Quicksands[quicksand_tag][:death_sink]
+  end
+  
+  # )--------------------------------------------------------------------------(
+  # )--  New Method: qcks_death                                              --(
+  # )--------------------------------------------------------------------------(
+  def qcks_death
+    Quicksands[quicksand_tag][:death]
+  end
+  
+  # )--------------------------------------------------------------------------(
+  # )--  New Method: qcks_slow_down                                          --(
+  # )--------------------------------------------------------------------------(
+  def qcks_slow_down
+    Quicksands[quicksand_tag][:slow_down]
+  end
+  
+  # )--------------------------------------------------------------------------(
+  # )--  New Method: qcks_max_slow_down                                      --(
+  # )--------------------------------------------------------------------------(
+  def qcks_max_slow_down
+ 
+    Quicksands[quicksand_tag][:max_slow_down]    
+  end  
+  
+  # )--------------------------------------------------------------------------(
+  # )--  Alias: dash?                                                        --(
+  # )--------------------------------------------------------------------------(
+    alias :mrts_qcksnd_dash? :dash?
+  def dash?
+    return false if quicksand_tag > 0 and !qcks_can_dash?
+    mrts_qcksnd_dash?
+  end
+  
+  # )--------------------------------------------------------------------------(
+  # )--  Alias: update                                                       --(
+  # )--------------------------------------------------------------------------(
+    alias :mrts_qcksnd_update :update
+  def update
+    mrts_qcksnd_update
+    update_sinking
+  end
+  
+  # )--------------------------------------------------------------------------(
+  # )--  New Method: update_sinking                                          --(
+  # )--------------------------------------------------------------------------(
+  def update_sinking
+    nil
+  end
+  
+  # )--------------------------------------------------------------------------(
+  # )--  Alias: shift_y                                                      --(
+  # )--------------------------------------------------------------------------(
+    alias :mrts_qcksnd_shift_y :shift_y
+  def shift_y
+    shift = mrts_qcksnd_shift_y
+    return shift-@sunk.to_i
+  end
+  
+  # )--------------------------------------------------------------------------(
+  # )--  Alias: move_straight                                                --(
+  # )--------------------------------------------------------------------------(
+  def quickcheck(new_x, new_y)
+    return false unless ($game_map.terrain_tag(new_x, new_y) != terrain_tag)# or $game_map.region_id(new_x, new_y) != region_id)
+    return false unless ($game_map.terrain_tag(new_x, new_y) == 0)# and $game_map.region_id(new_x, new_y) == 0)
+    return true
+  
+  end
+  
+  
+  
+  alias :mrts_qcksnd_move_straight :move_straight 
+  def move_straight(d, turn_ok = true)
+    @move_succeed = passable?(@x, @y, d)
+    dx = (d == 6 ? 1 : d == 4 ? -1 : 0)
+    dy = (d == 2 ? 1 : d == 8 ? -1 : 0)
+    new_x = @x + dx
+    new_y = @y + dy
+    if in_quicksand? && @move_succeed && quickcheck(new_x, new_y)
+      jump(dx, dy)
+    else
+      mrts_qcksnd_move_straight(d, turn_ok = true)
+    end
+  end
+  
+  # )--------------------------------------------------------------------------(
+  # )--  Alias: update_move                                                  --(
+  # )--------------------------------------------------------------------------(
+  alias :mrts_qcksnd_update_move :update_move
+  def update_move
+    if in_quicksand?
+      
+      slowdown = distance_per_frame * [qcks_max_slow_down, (1 - @sunk*qcks_slow_down)].max
+      @real_x = [@real_x - slowdown, @x].max if @x < @real_x
+      @real_x = [@real_x + slowdown, @x].min if @x > @real_x
+      @real_y = [@real_y - slowdown, @y].max if @y < @real_y
+      @real_y = [@real_y + slowdown, @y].min if @y > @real_y
+      update_bush_depth
+    else
+      mrts_qcksnd_update_move
+    end
+  end
+end
+
+# )=======---------------------------------------------------------------------(
+# )-- Class: Game_Enemy                                                      --(
+# )---------------------------------------------------------------------=======(
+class Sprite_Character < Sprite_Base
+  
+  # )--------------------------------------------------------------------------(
+  # )--  Aliased methods                                                     --(
+  # )--------------------------------------------------------------------------(
+  
+
+
+  
+  # )--------------------------------------------------------------------------(
+  # )--  Alias: initialize                                                   --(
+  # )--------------------------------------------------------------------------(
+  alias :mrts_qcksnd_initialize :initialize
+  def initialize(*args)
+    @sunk = 0.0
+    mrts_qcksnd_initialize(*args)
+  end
+  
+  # )--------------------------------------------------------------------------(
+  # )--  Alias: update_src_rect                                              --(
+  # )--------------------------------------------------------------------------(
+    alias :mrts_qcksnd_update_src_rect :update_src_rect
+  def update_src_rect
+    mrts_qcksnd_update_src_rect   
+    bob = self.src_rect.height
+    self.src_rect.height -= @sunk
+    self.src_rect.height += @character.jump_height if @sunk > 0
+    self.src_rect.height = bob if self.src_rect.height > bob
+  end
+  
+  # )--------------------------------------------------------------------------(
+  # )--  Alias: update_other                                                 --(
+  # )--------------------------------------------------------------------------(
+    alias :mrts_qcksnd_update_other :update_other
+  def update_other
+    mrts_qcksnd_update_other
+    @sunk = @character.sunk
+  end
+end
+
+
+module DL
+  module EventQS
+    Regex = /<float>/i
+    Regex2 = /<sink:\s*(\d+)\s*>/i
+  end
+end
+
+module RPG
+  class Event::Page
+
+    def event_float?
+      @list.each {|cmd|
+        if cmd.code == 108 && res = cmd.parameters[0].match(DL::EventQS::Regex)
+          return true
+        end
+      }
+      return false
+    end
+    
+    def event_sink
+      bob = Quicksand::Event_MaxSink
+      @list.each {|cmd|
+        if cmd.code == 108 && res = cmd.parameters[0].match(DL::EventQS::Regex2)
+          bob = res[1].to_f
+        end
+      }
+      return bob
+    end
+   
+  end
+end
+
+class Game_Character < Game_CharacterBase
+  def stayafloat?
+    return false if is_a?(Game_Event) and @erased
+    return true if is_a?(Game_Event) and @page and @page.event_float?
+    return true if is_a?(Game_Player) and actor.char_float?
+    return false
+  end
+end
+
+class Game_Follower < Game_Character
+  def stayafloat?
+    return false if !visible?
+    return true if actor.char_float?
+    return false
+  end
+end
+
+module RPG
+  class Actor < BaseItem
+    
+    def char_float?
+     self.note =~ DL::EventQS::Regex ? true : false
+   end
+    def char_sink
+      bob = 64
+     res = self.note.match(DL::EventQS::Regex2)
+      bob = res[1].to_f if res
+      return bob
+    end
+    
+  end
+end
+
+class Game_Actor < Game_Battler
+  def char_float?
+    actor.char_float?
+  end
+  def char_sink
+    actor.char_sink
+  end
+end
+
+class Game_Character < Game_CharacterBase
+  
+  
+  def quickstate
+    return false unless (is_a?(Game_Player) or (is_a?(Game_Follower) and visible?))
+    case quicksand_tag
+    when 2
+      nil if @sunk >= 32
+    end
+    
+  end
+  
+  def quick_teleport
+    return unless is_a?(Game_Player) or (is_a?(Game_Follower) and visible?)
+
+     actor.add_state(death_state_id)
+
+  end
+  
+end 
+
+
+
+class Game_Vehicle < Game_Character
+    
+  def vehicle_maxsink
+    bob = 0
+      bob = 8 if @type == :boat
+      bob = 16 if @type == :ship
+      bob = 16 if @type == :airship
+
+      bob = 28 if !@driving and bob > 28
+    return bob
+  end
+  
+
+  def update_sinking
+    if in_quicksand? and @altitude <= 0
+      @sunk += qcks_sink_speed
+      max_sink = eval(qcks_max_sink.to_s).to_f
+      max_sink = vehicle_maxsink if max_sink > vehicle_maxsink
+      max_sink = Event_MaxSink if $game_player.vehicle_getting_off and @type == $game_player.vehicle_type
+      @sunk = max_sink if @sunk > max_sink
+    else
+      @sunk -= 8.0 if @sunk > 0
+      @sunk = 0 if @sunk < 0
+    end
+  end
+  
+end
+
+
+
+class Game_Player < Game_Character
+  def update_sinking
+    if in_quicksand?
+      @sunk += qcks_sink_speed
+      max_sink = eval(qcks_max_sink.to_s).to_f
+      max_sink = actor.char_sink if max_sink > actor.char_sink
+      max_sink = vehicle.vehicle_maxsink if vehicle_type != :walk
+      max_sink = 0 if @vehicle_type == :airship
+      max_sink = Event_MaxSink if @vehicle_getting_on
+      @sunk = max_sink if @sunk > max_sink
+      quick_teleport  if qcks_death and @sunk >= qcks_death_sink.to_f  and jump_height <= 0 && vehicle_type == :walk
+    else
+      @sunk -= 8.0 if @sunk > 0
+      @sunk = 0 if @sunk < 0
+    end
+    @sunk = 0 if stayafloat?
+    quickstate
+  end
+  
+  
+  def vehicle_type
+    @vehicle_type
+  end
+  
+  def vehicle_getting_on
+    @vehicle_getting_on
+  end
+  def vehicle_getting_off
+    @vehicle_getting_off
+  end
+end
+
+class Game_Follower < Game_Character
+  def update_sinking
+    if in_quicksand? and visible?
+      @sunk += qcks_sink_speed
+      max_sink = eval(qcks_max_sink.to_s).to_f
+      max_sink = actor.char_sink if max_sink > actor.char_sink
+      max_sink = $game_player.vehicle.vehicle_maxsink if $game_player.vehicle_type != :walk
+      max_sink = 0 if $game_player.vehicle_type == :airship
+      max_sink = Event_MaxSink if $game_player.vehicle_getting_on
+      @sunk = max_sink if @sunk > max_sink
+      
+      quick_teleport  if qcks_death and @sunk >= qcks_death_sink.to_f  and jump_height <= 0
+
+    else
+      @sunk -= 8.0 if @sunk > 0
+      @sunk = 0 if @sunk < 0
+    end
+    @sunk = 0 if stayafloat?
+    quickstate
+  end
+
+end
+
+class Game_Event < Game_Character
+  def update_sinking
+    if in_quicksand?
+      return if @page.nil?
+      @sunk += qcks_sink_speed
+      max_sink = eval(qcks_max_sink.to_s).to_f
+      
+      max_sink = @page.event_sink if @priority_type != 3 and max_sink > @page.event_sink
+      max_sink = Event_MaxSink if @priority_type != 3 and max_sink > Event_MaxSink and @page.event_sink < Event_MaxSink
+      max_sink = @page.event_sink if @page.event_sink >= 32
+      max_sink = 0 if @character_name == ""
+      @sunk = max_sink if @sunk > max_sink
+      
+      if qcks_death and @sunk >= qcks_death_sink.to_f  and jump_height <= 0
+        erase
+      end
+      
+    else
+      @sunk -= 8.0 if @sunk > 0
+      @sunk = 0 if @sunk < 0
+    end
+    @sunk = 0 if stayafloat?
+    quickstate
+  end
+  
+end

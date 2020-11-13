@@ -1,0 +1,402 @@
+module DL
+  module LAYERSTATE
+    MAXLAYER = 10
+    
+=begin
+#==============================================================================
+ ** Layered States
+ Author: Dramatic Lightning Co.
+------------------------------------------------------------------------------
+ Ever want to place layers upon layers of protection spells?
+ Any State you notetag with <LayerState> will head into a shared array where the
+ latest state plus any <LayerActive> states will be effective.  Damage will remove
+ the latest state, though you can place <LayerRemove: n> on a Skill
+ to remove more layers at once!  Set MAXLAYER to the max amount of Layered States.
+------------------------------------------------------------------------------
+ You can also tag both layered and regular states to limit when they apply.
+ Use <ApplyWhen: state_ids> once you have a required state or
+ <RestrictWhen: state_ids> to stop adding more when you have that state.
+ Use <ApplyCurrent: state_ids> to add a state or <RestrictCurrent: state_ids>
+ to prevent a state based on the latest layered state. You can also place
+ <FinalLayer> to stop adding more Layered States!
+------------------------------------------------------------------------------
+ Finaly, you can place <LayerPurge> on a layered state or skill if you want
+ to remove all the involved Layered States when that state is removed.
+ Or you can place <LayerPurgeDeath> on a state if you want them gone when you die.
+------------------------------------------------------------------------------
+ And also, there are a few methods for battlers if you need some information.
+ .layer_state_count can count your layered states or used with a (state_id)
+ for a specific counter.  .layer_state_current will return the id of the latest
+ layered state.  .layer_state_clear will clean up your layered states quickly!
+------------------------------------------------------------------------------
+=end
+    #use commas on Restrict/Apply for more states.
+    Regex1 = /<LayerState>/i #Marks this state for Layer Array
+    Regex2 = /<RestrictWhen:\s*(.*)\s*>/i #Cannot add when one of these states is present.
+    Regex2a = /<ApplyWhen:\s*(.*)\s*>/i #Add only when one of these states present
+    Regex3 = /<ApplyCurrent:\s*(.*)\s*>/i #add if the current layer is one of these.
+    Regex3a = /<RestrictCurrent:\s*(.*)\s*>/i #don't add if the current layer is not one of these.
+    Regex4 = /<LayerRemove:\s*(\d+)\s*>/i #remove this many layers with the skill
+    Regex5 = /<LayerPurge>/i #Remove states regardless of position
+    Regex5a = /<LayerPurgeDeath>/i #remove states on death regardless of position
+    Regex6 = /<LayerActive>/i #remove states on death regardless of position
+    Regex7 = /<FinalLayer>/i #No other states can be applied after this.
+  end
+end
+
+module RPG
+  class BaseItem
+    
+    def layered?
+      res = self.note.match(DL::LAYERSTATE::Regex1)
+      return res
+    end
+    
+    def restrict_when
+      if @note =~ DL::LAYERSTATE::Regex2
+        ints = []
+        for x in $1.split(",")
+          ints.push(x.to_i)
+        end
+        return ints
+      else
+        return []
+      end
+    end
+    def apply_when
+      if @note =~ DL::LAYERSTATE::Regex2a
+        ints = []
+        for x in $1.split(",")
+          ints.push(x.to_i)
+        end
+        return ints
+      else
+        return []
+      end
+    end
+        
+    def current_apply
+      if @note =~ DL::LAYERSTATE::Regex3
+        ints = []
+        for x in $1.split(",")
+          ints.push(x.to_i)
+        end
+        return ints
+      else
+        return []
+      end
+    end
+    def current_restrict
+      if @note =~ DL::LAYERSTATE::Regex3a
+        ints = []
+        for x in $1.split(",")
+          ints.push(x.to_i)
+        end
+        return ints
+      else
+        return []
+      end
+    end
+    
+    def layer_remove
+      bob = 1
+      res = self.note.match(DL::LAYERSTATE::Regex4)
+      bob = res[1].to_i if res
+      return bob
+    end
+    def layer_purge
+      res = self.note.match(DL::LAYERSTATE::Regex5)
+      return res
+    end
+    def layer_purge_death
+      res = self.note.match(DL::LAYERSTATE::Regex5a)
+      return res
+    end 
+    def active_layer?
+      res = self.note.match(DL::LAYERSTATE::Regex6)
+      return res
+    end
+    def final_layer?
+      res = self.note.match(DL::LAYERSTATE::Regex7)
+      return res
+    end
+    
+  end
+end
+
+
+class Game_Battler < Game_BattlerBase
+  alias :dl_layer_initialize :initialize
+  def initialize
+    @layer_states ||= []
+    @layer_turns ||= []
+    dl_layer_initialize
+  end
+  
+  def feature_objects
+    layer_states(true) + super
+  end
+
+  def layer_states(pure = false)
+    return @layer_states.collect {|i| $data_states[i]} if pure
+    bob = @layer_states.select{|i| $data_states[i].active_layer?} 
+    bob = bob.collect{|i| $data_states[i]} 
+    bob << $data_states[@layer_states.last] if @layer_states.count > 0 and !$data_states[@layer_states.last].active_layer?
+    return bob
+  end
+
+  alias :dl_layer_die :die
+  def die
+    dl_layer_die
+    @layer_states.count.times.each do |i|
+      if $data_states[@layer_states[i]].layer_purge_death
+        @layer_states[i] = nil
+        @layer_turns[i] = nil
+      end
+    end
+    @layer_states = @layer_states.compact
+    @layer_turns = @layer_turns.compact
+  end
+
+  def layer_states_apply(state_id, full = true)
+    if full
+      return false if @layer_states.count >= DL::LAYERSTATE::MAXLAYER
+      return false if layer_states(true).any? {|s| s.final_layer?}
+      return false if states.any? {|s| s.final_layer?}
+    end
+    bob = $data_states[state_id]
+    sam = @states + @layer_states
+    return false if  bob.restrict_when.count > 0 and bob.restrict_when.any? {|s| sam.include?(s)}
+    return true if  bob.apply_when.count > 0 and bob.apply_when.any? {|s| sam.include?(s)}
+    return false if  bob.current_restrict.count > 0 and @layer_states.count > 0 and bob.current_restrict.includes? @layer_states.last
+    return true if  bob.current_apply.count > 0 and @layer_states.count > 0 and bob.current_apply.includes? @layer_states.last
+    return (bob.apply_when.count > 0  or bob.current_apply.count > 0 ) ? false : true 
+  end
+
+  alias :dl_layer_remove_battle_states :remove_battle_states
+  def remove_battle_states
+    dl_layer_remove_battle_states
+    layer_states(true).reverse.each do |state|
+      state.remove_at_battle_end ? remove_state(state.id) : break
+    end
+    bob = []
+    layer_states(true).each do |s|
+      if s.layer_purge and s.remove_at_battle_end
+        bob << s.id
+      end
+    end
+    bob = bob.uniq
+    if bob.count > 0
+      @layer_states.count.times.each do |i|
+        @layer_turns[i] = nil if bob.include?(@layer_states[i])
+        @layer_states[i] = nil if bob.include?(@layer_states[i])
+      end
+      @layer_states = @layer_states.compact
+      @layer_turns = @layer_turns.compact
+    end
+  end
+  
+  def item_effect_test(user, item, effect)
+    case effect.code
+    when EFFECT_RECOVER_HP
+      hp < mhp || effect.value1 < 0 || effect.value2 < 0
+    when EFFECT_RECOVER_MP
+      mp < mmp || effect.value1 < 0 || effect.value2 < 0
+    when EFFECT_ADD_STATE
+      $data_states[effect.data_id].layered? ? (layer_states_apply(effect.data_id)) : (!state?(effect.data_id) and layer_states_apply(effect.data_id, false))
+    when EFFECT_REMOVE_STATE 
+      if @layer_states.count > 0 and $data_states[effect.data_id].layered?
+        return true if @layer_states.include?(effect.data_id) and (item.layer_purge or $data_states[effect.data_id].layer_purge)
+        return true if @layer_states.last == effect.data_id
+        return false
+      else
+        return state?(effect.data_id)
+      end
+    when EFFECT_ADD_BUFF
+      !buff_max?(effect.data_id)
+    when EFFECT_ADD_DEBUFF
+      !debuff_max?(effect.data_id)
+    when EFFECT_REMOVE_BUFF
+      buff?(effect.data_id)
+    when EFFECT_REMOVE_DEBUFF
+      debuff?(effect.data_id)
+    when EFFECT_LEARN_SKILL
+      actor? && !skills.include?($data_skills[effect.data_id])
+    else
+      true
+    end
+  end
+
+  alias :dl_layer_add_state :add_state
+  def add_state(state_id)
+    if layer_state_addable?(state_id) 
+      if layer_states_apply(state_id)
+        add_new_layer_state(state_id)
+        @result.added_states.push(state_id)
+      end
+    elsif layer_states_apply(state_id, false)
+      dl_layer_add_state(state_id)
+    end
+  end
+
+  def add_new_layer_state(state_id)
+    bob = $data_states[state_id]
+    @layer_states.push(state_id)
+    @layer_turns.push([bob.min_turns + rand(1 + [bob.max_turns - bob.min_turns, 0].max), bob.steps_to_remove])
+    on_restrict if restriction > 0
+    refresh
+  end
+
+  def layer_state_addable?(state_id)
+    $data_states[state_id] && $data_states[state_id].layered? && !state_resist?(state_id)
+  end
+
+  alias :dl_layer_update_state_turns :update_state_turns
+  def update_state_turns
+    dl_layer_update_state_turns
+    if @layer_states.count > 0
+      @layer_turns.last[0] -= 1 if @layer_turns.last[0] > 0
+    end
+  end
+
+  alias :dl_layer_remove_state :remove_state
+  def remove_state(state_id)
+    if @layer_states.count > 0 and $data_states[(state_id)].layered?
+      if @layer_states.include?(state_id) and $data_states[state_id].layer_purge 
+        @layer_states.count.times.each do |i|
+          @layer_turns[i] = nil if  @layer_states[i] == state_id
+          @layer_states[i] = nil if  @layer_states[i] == state_id
+        end
+        @layer_states = @layer_states.compact
+        @layer_turns = @layer_turns.compact
+        refresh
+        @result.removed_states.push(state_id).uniq!
+      elsif @layer_states.last == state_id
+        @layer_states.pop
+        @layer_turns.pop
+        refresh
+        @result.removed_states.push(state_id)
+      end
+    else
+      dl_layer_remove_state(state_id)
+    end
+  end
+
+  alias :dl_layer_remove_states_auto :remove_states_auto
+  def remove_states_auto(timing)
+    dl_layer_remove_states_auto(timing)
+    if @layer_states.count > 0
+      if @layer_turns.last[0] == 0 and $data_states[@layer_states.last].auto_removal_timing == timing
+        remove_state(@layer_states.last)
+      end
+    end
+  end
+
+  alias :dl_layer_remove_states_by_damage :remove_states_by_damage
+  def remove_states_by_damage
+    dl_layer_remove_states_by_damage
+    if @layer_states.count > 0
+      remove_state(@layer_states.last) if $data_states[@layer_states.last].remove_by_damage && rand(100) < $data_states[@layer_states.last].chance_by_damage
+    end
+  end
+
+  alias :dl_layer_item_effect_remove_state :item_effect_remove_state
+  def item_effect_remove_state(user, item, effect)
+    if $data_states[effect.data_id].layered?
+      if ($data_states[effect.data_id].layer_purge or item.layer_purge)
+        if @layer_states.include?(effect.data_id) and rand < effect.value1
+          @layer_states.count.times.each do |i|
+            @layer_turns[i] = nil if  @layer_states[i] == effect.data_id
+            @layer_states[i] = nil if  @layer_states[i] == effect.data_id
+          end
+          @layer_states = @layer_states.compact
+          @layer_turns = @layer_turns.compact
+          refresh
+          @result.removed_states.push(effect.data_id).uniq!
+          @result.success = true
+        end
+      else
+        @layer_remove.push([effect.data_id, effect.value1])
+      end
+    else
+      dl_layer_item_effect_remove_state(user, item, effect)
+    end
+  end
+
+  alias :dl_layer_item_apply :item_apply
+  def item_apply(user, item)
+    @layer_remove = []
+    dl_layer_item_apply(user, item)
+    if @result.hit? and @layer_remove.count > 0
+      item.layer_remove.times.each do |i|
+        break if @layer_states.count == 0
+        bob = false
+        @layer_remove.each do |lr|
+          if lr[0] == @layer_states.last and rand < lr[1]
+            bob = true
+            @success = true
+          end
+        end
+        if bob
+          @layer_states.pop
+          @layer_turns.pop
+        end
+      end
+    end
+  end
+  
+  def layer_state_icons
+    bob = [0]
+    if @layer_states.count > 0
+      @layer_states.each do |s|
+        bob.push($data_states[s].icon_index)
+      end
+    end
+    bob.delete(0)
+    return bob
+  end
+
+  alias :dl_layer_most_important_state_text :most_important_state_text
+  def most_important_state_text
+    return layer_states.last.message3 if layer_states.last and !state.message3.empty?
+    return dl_layer_most_important_state_text
+  end
+  
+  def layer_state_count(type = 0)
+    return type > 0 ? @layer_states.count(type) : @layer_states.count 
+  end
+  
+  def layer_state_current
+    return nil if @layer_states == 0
+    return @layer_states.last
+  end
+    
+  def layer_states_clear
+    @layer_states = []
+    @layer_turns = []
+  end
+end
+
+class Game_Actor < Game_Battler
+  
+  alias :dl_layer_on_player_walk :on_player_walk
+  def on_player_walk
+    dl_layer_on_player_walk
+    if $game_player.normal_walk?
+      if @layer_states.count > 0
+        @layer_turns.last[1] -= 1 if @layer_turns.last[1] > 0
+        remove_state(@layer_states.last) if @layer_turns.last[1] == 0
+      end
+    end
+  end
+  
+end
+
+class Window_Base < Window
+  def draw_actor_icons(actor, x, y, width = 96)
+    licons = (actor.layer_state_icons)[[actor.layer_state_icons.count - 4, 0].max, DL::LAYERSTATE::MAXLAYER]
+    licons.each_with_index {|n, i| draw_icon(n, x + 1 * i, y) }
+    icons = (actor.state_icons + actor.buff_icons)[0, [(width - (licons.count > 0 ? 24 : 0)) / 24,0].max]
+    icons.each_with_index {|n, i| draw_icon(n, x + (licons.count > 0 ? 24: 0) + 24 * i, y) }
+  end
+end
