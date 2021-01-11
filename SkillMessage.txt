@@ -1,0 +1,105 @@
+# Dramatic Lightning Co
+# Skill Message Replacer
+# This replaces the Skill Name/Message for a battler
+# <SkillMessageskill_id: string> to replace skill message.  Name included like default.
+# <SkillName skill_id: string> to replace skill name
+# $1 is used as skill name placeholder. $2 sets a new line.
+
+module RPG
+  class BaseItem
+    def skill_mess
+      skill_mess = []
+      res = self.note.scan(/<SkillMessage\s*(\d+)\s*:\s*(.*?)\s*>/i)      
+      unless res.empty?
+        res.each do |(s, m)|
+          skill_mess[s.to_i] = " " + m.to_s
+        end
+      end
+      return skill_mess
+    end
+    def skill_name
+      skill_name = []
+      res = self.note.scan(/<SkillName\s*(\d+)\s*:\s*(.*?)\s*>/i)      
+      unless res.empty?
+        res.each do |(s, m)|
+          skill_name[s.to_i] = " " + m.to_s
+        end
+      end
+      return skill_name
+    end
+  end
+end
+
+class Game_Battler < Game_BattlerBase  
+  def skill_mess
+    return actor.skill_mess if actor?
+    return enemy.skill_mess if enemy?
+    return []
+  end
+  def skill_name
+    return actor.skill_name if actor?
+    return enemy.skill_name if enemy?
+    return []
+  end
+end
+
+class Window_BattleLog < Window_Selectable
+  def display_use_item(subject, item)
+    if item.is_a?(RPG::Skill)
+      s_name = (subject.skill_name[item.id] == nil ? item.name : subject.skill_name[item.id].to_s.lstrip)
+      if subject.skill_mess[item.id] == nil
+       	t = item.message1
+        t = t.gsub!("$1", s_name) if t.include?("$1")
+        add_text(subject.name + t)
+        unless item.message2.empty?
+          wait
+	        t = item.message2
+          t = t.gsub!("$1", s_name) if t.include?("$1")
+          add_text(t)
+        end
+      else
+        bob = subject.name + subject.skill_mess[item.id].to_s
+        bob = bob.gsub!("$1", s_name) if bob.include?("$1")
+        bob = bob.split("$2")
+        first_line = false
+        bob.each do |t|
+          first_line ? wait : first_line = true
+          add_text(t)
+        end
+      end
+    else
+      add_text(sprintf(Vocab::UseItem, subject.name, item.name))
+    end
+  end
+end
+
+class Window_SkillList < Window_Selectable
+  def draw_item(index)
+    skill = @data[index]
+    if skill
+      rect = item_rect(index)
+      rect.width -= 4
+      @actor
+      draw_item_name_ex(@actor,skill, rect.x, rect.y, enable?(skill))
+      draw_skill_cost(rect, skill)
+    end
+  end
+  def draw_item_name_ex(actor, item, x, y, enabled = true, width = 172)
+    return unless item
+    draw_icon(item.icon_index, x, y, enabled)
+    change_color(normal_color, enabled)
+    s_name = (actor.skill_name[item.id] == nil ? item.name : actor.skill_name[item.id].to_s.lstrip)
+    draw_text(x + 24, y, width, line_height, s_name)
+  end
+end
+
+class Window_ActorCommand < Window_Command
+  def add_attack_command
+    s_name = (@actor.skill_name[1] == nil ? Vocab::attack : @actor.skill_name[1].to_s.lstrip)
+    add_command(s_name, :attack, @actor.attack_usable?)
+  end
+  def add_guard_command
+    s_name = (@actor.skill_name[2] == nil ? Vocab::guard : @actor.skill_name[2].to_s.lstrip)
+    add_command(s_name, :guard, @actor.guard_usable?)
+  end
+end

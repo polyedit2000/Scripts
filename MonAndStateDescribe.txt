@@ -1,0 +1,149 @@
+#Edited by Dramatic Lightning Co
+#I did not make this Battle Description window.
+#However, I did replace the original list with notetags fo convenience.
+#<MonDescribe: string> describes the monster in battle.
+#<MonStateDescribe state_id: string> replaces the monster description when afflicted with that state.
+
+class Window_BattleDescription < Window_Selectable
+  attr_writer :enemy_id, :hp, :index
+  def draw_description
+    text = determine.split("$n")
+    unless text == @prev
+      @prev = text
+      contents.clear
+      text.size.times do |i|
+        rect = item_rect_for_text(i)
+        contents.clear_rect(rect)
+        draw_text_ex(rect.x, rect.y, text[i])
+      end
+    end
+  end
+  def refresh
+    draw_description
+  end
+  def determine
+    return '' unless @enemy_id && @hp
+
+    if @hp == 0
+      return ($data_enemies[@enemy_id].mon_s_desc[1] != nil ? $data_enemies[@enemy_id].mon_s_desc[1] : 'The enemy has fallen.' )
+    else
+      name = $game_troop.members[@index].states.detect {|state| $game_troop.members[@index].enemy.mon_s_desc_list.include?(state.id)}
+      return $data_enemies[@enemy_id].mon_s_desc[name.id] if name
+      return $data_enemies[@enemy_id].mon_desc
+    end
+
+  end
+  def standard_padding
+    10
+  end
+end
+
+module RPG
+  class BaseItem
+    def mon_desc
+      x = ''
+      res = self.note.match(/<MonDescribe:\s*(.*)\s*>/i)
+      if res
+        x = res[1].to_s
+      end
+      return x
+    end
+    def mon_s_desc
+      return @mon_s_desc unless @mon_s_desc.nil?
+      load_notetag_mon_s_desc
+      return @mon_s_desc
+    end
+    
+    def mon_s_desc_list
+      return @mon_s_desc_list unless @mon_s_desc_list.nil?
+      load_notetag_mon_s_desc
+      return @mon_s_desc_list
+    end
+    
+    def load_notetag_mon_s_desc
+      @mon_s_desc = {}
+      res = self.note.scan(/<MonStateDescribe\s*(\d+)\s*:\s*(.*)\s*>/i)      
+      unless res.empty?
+        res.each do |(state_id, s_desc)|
+          @mon_s_desc[state_id.to_i] = s_desc.to_s
+        end
+      end
+      @mon_s_desc_list = @mon_s_desc.keys
+    end
+  end
+end
+
+
+class Scene_Battle < Scene_Base
+  alias old_create_all_windows create_all_windows
+  def create_all_windows
+    old_create_all_windows
+    create_description_windows
+  end
+  alias old_update_basic update_basic
+  def update_basic
+    old_update_basic
+    update_descriptions
+    @description_windows.each {|x| x.refresh}
+  end
+  def create_description_windows
+    @description_windows = [
+    Window_BattleDescription.new(0  , 1 , 272, 98),
+    Window_BattleDescription.new(272, 1 , 272, 98),
+    Window_BattleDescription.new(0  , 99 , 272, 98),
+    Window_BattleDescription.new(272, 99 , 272, 98),
+    Window_BattleDescription.new(0  , 197, 272, 98),
+    Window_BattleDescription.new(272, 197, 272, 98)
+    ]
+  end
+  def update_descriptions
+    enemy = $game_troop.members
+    @description_windows.each_with_index do |value, index|
+      if !enemy[index].nil?
+        value.enemy_id = enemy[index].enemy_id
+        value.index = index
+        value.hp = enemy[index].hp
+      end
+    end
+  end
+
+alias old_terminate terminate
+  def terminate
+    old_terminate
+    @description_windows.each {|x| x.dispose}
+  end
+  alias old_command_skill command_skill
+  def command_skill
+    @description_windows.each {|x| x.hide}
+    old_command_skill
+  end
+  def on_skill_cancel
+    @skill_window.hide
+    @actor_command_window.activate
+    @description_windows.each {|x| x.show}
+  end
+  def on_skill_ok
+    @skill = @skill_window.item
+    BattleManager.actor.input.set_skill(@skill.id)
+    BattleManager.actor.last_skill.object = @skill
+    if !@skill.need_selection?
+      @description_windows.each {|x| x.show}
+      @skill_window.hide
+      next_command
+    elsif @skill.for_opponent?
+      select_enemy_selection
+    else
+      select_actor_selection
+    end
+  end
+  alias old_on_actor_ok on_actor_ok
+  def on_actor_ok
+    @description_windows.each {|x| x.show}
+    old_on_actor_ok
+  end
+  alias old_on_enemy_ok on_enemy_ok
+  def on_enemy_ok
+    @description_windows.each {|x| x.show}
+    old_on_enemy_ok
+  end
+end
