@@ -23,7 +23,7 @@ class Window_BattleDescription < Window_Selectable
   end
   def determine
     return '' unless @enemy_id && @hp
-
+    
     if @hp == 0
       return ($data_enemies[@enemy_id].mon_s_desc[1] != nil ? $data_enemies[@enemy_id].mon_s_desc[1] : 'The enemy has fallen.' )
     else
@@ -91,18 +91,20 @@ class Scene_Battle < Scene_Base
     enemy = $game_troop.members
     enemy.size.times.each do |i|
       next if i >= 6
-      x = ((i % 2 == 0) ?  0 : 272)
-      y = 1 + ((i/2).floor * 98)
-      x = 272 / 2 if i == [enemy.size, 6].min - 1 and i % 2 == 0
-      y += (([6-enemy.size,0].max) / 2).floor * 49
       w = 272
       h = 98
-      @description_windows.push(Window_BattleDescription.new(x,y,w,h))
+      @description_windows.push(Window_BattleDescription.new(1,1,w,h))
     end  
   end
   def update_descriptions
-    enemy = $game_troop.members
+    enemy = $game_troop.members.select {|m| !m.hidden?}
     @description_windows.each_with_index do |value, index|
+      next if index >= 6
+      @description_windows[index].opacity = ((index + 1  > enemy.size) ? 0 : 255)
+      @description_windows[index].x = ((index % 2 == 0) ?  0 : 272)
+      @description_windows[index].y = 1 + ((index/2).floor * 98)
+      @description_windows[index].x = 272 / 2 if index == [enemy.size, 6].min - 1 and index % 2 == 0
+      @description_windows[index].y += (([6-enemy.size,0].max) / 2).floor * 49
       if !enemy[index].nil?
         value.enemy_id = enemy[index].enemy_id
         value.index = index
