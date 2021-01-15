@@ -4,6 +4,13 @@
 #<MonDescribe: string> describes the monster in battle.
 #<MonStateDescribe state_id: string> replaces the monster description when afflicted with that state.
 
+module DL
+  module MONWIN
+    TIMER = 60
+  end
+end
+
+
 class Window_BattleDescription < Window_Selectable
   attr_writer :enemy_id, :hp, :index
   def draw_description
@@ -23,12 +30,22 @@ class Window_BattleDescription < Window_Selectable
   end
   def determine
     return '' unless @enemy_id && @hp
-    
+    @montimer = DL::MONWIN::TIMER if @montimer == nil
+    @moncycle = 0 if @moncycle == nil
     if @hp == 0
       return ($data_enemies[@enemy_id].mon_s_desc[1] != nil ? $data_enemies[@enemy_id].mon_s_desc[1] : 'The enemy has fallen.' )
     else
-      name = $game_troop.members[@index].states.detect {|state| $game_troop.members[@index].enemy.mon_s_desc_list.include?(state.id)}
-      return $data_enemies[@enemy_id].mon_s_desc[name.id] if name
+      name = $game_troop.members[@index].states.select {|state| $game_troop.members[@index].enemy.mon_s_desc[state.id] != nil}
+      @montimer -= 1
+      if @montimer <= 0
+        @montimer = DL::MONWIN::TIMER 
+        @moncycle += 1
+       
+        if @moncycle >= name.size
+          @moncycle = 0
+        end
+      end
+      return $data_enemies[@enemy_id].mon_s_desc[name[@moncycle].id] if name.size > 0
       return $data_enemies[@enemy_id].mon_desc
     end
 
